@@ -884,6 +884,16 @@ test('release candidate workflow is manually dispatched from main only', async (
   assert.doesNotMatch(workflow, /^\s*pull_request_target:\s*$/m)
 })
 
+test('release candidate anchors Changesets to the authenticated pull request base', async () => {
+  const workflow = await readRepositoryFile('.github/workflows/release-candidate.yml')
+  const buildJob = jobBlock(workflow, 'build-release-tree')
+
+  assert.match(buildJob, /BASE_SHA:\s*\$\{\{\s*needs\.inspect\.outputs\.base_sha\s*\}\}/)
+  assert.match(buildJob, /git branch --force main "\$BASE_SHA"/)
+  assert.match(buildJob, /test "\$\(git rev-parse main\)" = "\$BASE_SHA"/)
+  assert.match(buildJob, /changeset status --output/)
+})
+
 test('release candidate workflow keeps the pull request build job secretless', async () => {
   const workflow = await readRepositoryFile('.github/workflows/release-candidate.yml')
   const buildJob = jobBlock(workflow, 'build-release-tree')
