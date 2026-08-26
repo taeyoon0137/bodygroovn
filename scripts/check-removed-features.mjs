@@ -216,11 +216,26 @@ export function extractRendererMessageContract(relativePath, contents, removedRe
     let renderers
     if (node.type === 'ArrayExpression') renderers = node.elements.map(rendererMemberName)
     else if (node.type === 'Identifier') renderers = rendererArrays.get(node.name)
-    else if (node.type === 'LogicalExpression' || node.type === 'MemberExpression') return null
+    else if (node.type === 'LogicalExpression') {
+      if (node.operator !== '||') {
+        throw new Error(`${relativePath} contains an unsupported dynamic renderer expression`)
+      }
+      const fallback = resolveRenderers(node.right)
+      if (!fallback) {
+        throw new Error(`${relativePath} contains an unresolved dynamic renderer fallback`)
+      }
+      return {
+        dynamicSource: escodegen.generate(node.left, { format: { compact: true } }),
+        renderers: fallback.renderers,
+      }
+    } else if (node.type === 'MemberExpression') return null
     if (!renderers || !renderers.length || !renderers.every(Boolean)) {
       throw new Error(`${relativePath} contains an unresolved renderer membership`)
     }
-    return renderers.filter(renderer => !removedRenderers.includes(renderer))
+    return {
+      dynamicSource: null,
+      renderers: renderers.filter(renderer => !removedRenderers.includes(renderer)),
+    }
   }
 
   function visit(node, context = []) {
@@ -228,9 +243,9 @@ export function extractRendererMessageContract(relativePath, contents, removedRe
     if (node.type === 'ObjectExpression') {
       const rendererProperty = node.properties.find(property => astPropertyName(property) === 'renderers')
       if (rendererProperty) {
-        const renderers = resolveRenderers(rendererProperty.value)
-        if (renderers) {
-          if (!renderers.length) throw new Error(`${relativePath} contains an empty retained renderer membership`)
+        const rendererContract = resolveRenderers(rendererProperty.value)
+        if (rendererContract) {
+          if (!rendererContract.renderers.length) throw new Error(`${relativePath} contains an empty retained renderer membership`)
           entries.push({
             file: relativePath,
             ordinal: entries.length,
@@ -239,7 +254,8 @@ export function extractRendererMessageContract(relativePath, contents, removedRe
               type: 'ObjectExpression',
               properties: node.properties.filter(property => property !== rendererProperty),
             }, { format: { compact: true } }),
-            renderers,
+            dynamicSource: rendererContract.dynamicSource,
+            renderers: rendererContract.renderers,
           })
         }
       }
