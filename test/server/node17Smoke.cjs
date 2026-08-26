@@ -37,12 +37,13 @@ function request(connection, pathname, body) {
     const connection = controller.getConnection();
     assert.match(connection.token, /^[0-9a-f]{64}$/);
     assert.deepEqual(await request(connection, '/ping'), { status: 200, body: { ok: true, data: { pong: true } } });
+    assert.deepEqual(await request(connection, '/getType', { path: encodeURIComponent(imagePath) }), { status: 200, body: { ok: true, data: { fileType: { ext: 'png', mime: 'image/png' } } } });
     const processed = await request(connection, '/processImage', { path: encodeURIComponent(imagePath), paletteColors: 32 });
     assert.equal(processed.status, 200);
     assert.equal(processed.body.ok, true);
     assert.equal(processed.body.data.extension, 'png');
     assert.deepEqual((await fs.promises.readFile(imagePath)).subarray(0, 8), STATIC_PNG.subarray(0, 8));
-    process.stdout.write('Bundled Node 17 local-server and UPNG worker roundtrip passed.\n');
+    process.stdout.write('Bundled Node 17 local-server, file-type, and UPNG worker roundtrip passed.\n');
   } finally {
     await controller.close();
     await fs.promises.rm(root, { recursive: true, force: true });

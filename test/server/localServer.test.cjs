@@ -101,6 +101,60 @@ test('enforces envelopes, content type, registered roots, and symlink realpaths'
   assert.equal((await overlongResponse.json()).error.code, 'INVALID_PATH');
 });
 
+test('requires every parsed POST body to be a JSON object', async (t) => {
+  const f = await fixture();
+  t.after(async () => { await f.controller.close(); await fs.promises.rm(f.root, { recursive: true, force: true }); });
+  for (const body of [null, [], 'path', 1, true]) {
+    const response = await f.request('/encode', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    assert.equal(response.status, 400, JSON.stringify(body));
+    assert.equal((await response.json()).error.code, 'INVALID_BODY');
+  }
+});
+
+test('rejects invalid route field types without coercion', async (t) => {
+  const f = await fixture();
+  t.after(async () => { await f.controller.close(); await fs.promises.rm(f.root, { recursive: true, force: true }); });
+  const pathname = path.join(f.root, 'image.png');
+  await fs.promises.writeFile(pathname, syntheticPng(1, 1));
+  const post = (route, body) => f.request(route, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+
+  for (const route of ['/encode', '/getType', '/processImage']) {
+    for (const invalidPath of [null, true, 1, [], {}]) {
+      const response = await post(route, { path: invalidPath, paletteColors: 0 });
+      assert.equal(response.status, 400, `${route}: ${JSON.stringify(invalidPath)}`);
+      assert.equal((await response.json()).error.code, 'INVALID_PATH');
+    }
+  }
+  for (const paletteColors of [null, true, false, '0', '32', [], {}]) {
+    const response = await post('/processImage', { path: encodeURIComponent(pathname), paletteColors });
+    assert.equal(response.status, 400, JSON.stringify(paletteColors));
+    assert.equal((await response.json()).error.code, 'INVALID_PALETTE');
+  }
+  const encodedRoot = encodeURIComponent(f.root);
+  for (const [field, value, code] of [
+    ['origin', null, 'INVALID_PATH'],
+    ['destination', [], 'INVALID_PATH'],
+    ['fileName', true, 'INVALID_FILE_NAME'],
+    ['time', '1', 'INVALID_TIME'],
+    ['time', true, 'INVALID_TIME'],
+  ]) {
+    const body = { origin: encodedRoot, destination: encodedRoot, fileName: 'animation', time: 1, [field]: value };
+    const response = await post('/splitAnimation', body);
+    assert.equal(response.status, 400, `${field}: ${JSON.stringify(value)}`);
+    assert.equal((await response.json()).error.code, code);
+  }
+});
+
+test('rejects non-PNG input when palette processing is disabled', async (t) => {
+  const f = await fixture();
+  t.after(async () => { await f.controller.close(); await fs.promises.rm(f.root, { recursive: true, force: true }); });
+  const pathname = path.join(f.root, 'not-an-image.bin');
+  await fs.promises.writeFile(pathname, 'not a png');
+  const response = await f.request('/processImage', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: encodeURIComponent(pathname), paletteColors: 0 }) });
+  assert.equal(response.status, 415);
+  assert.equal((await response.json()).error.code, 'INVALID_PNG');
+});
+
 test('rejects sparse files at the encode and image route limits without reading them', async (t) => {
   const f = await fixture();
   t.after(async () => { await f.controller.close(); await fs.promises.rm(f.root, { recursive: true, force: true }); });
@@ -336,11 +390,13 @@ test('reads at most 8192 bytes for type detection and accepts every palette valu
 
   const echoWorker = path.join(f.root, 'echo.cjs');
   await fs.promises.writeFile(echoWorker, "const { parentPort, workerData } = require('worker_threads'); parentPort.postMessage({ ok: true, data: { changed: false, path: workerData.pathname, extension: 'png', warnings: [] } });\n");
+  const palettePath = path.join(f.root, 'palette.png');
+  await fs.promises.writeFile(palettePath, syntheticPng(1, 1));
   const palettes = await createServer({ tempRoot: f.root, workerPath: echoWorker });
   t.after(() => palettes.close());
   const connection = palettes.getConnection();
   for (const paletteColors of [0, 32, 64, 128, 256]) {
-    const response = await fetch(`http://127.0.0.1:${connection.port}/processImage`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Bodygroovn-Token': connection.token }, body: JSON.stringify({ path: encodeURIComponent(pathname), paletteColors }) });
+    const response = await fetch(`http://127.0.0.1:${connection.port}/processImage`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Bodygroovn-Token': connection.token }, body: JSON.stringify({ path: encodeURIComponent(palettePath), paletteColors }) });
     assert.equal(response.status, 200, paletteColors);
   }
 });
