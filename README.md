@@ -66,13 +66,13 @@ The repository commits `mise.lock` for Linux x64, macOS x64/arm64, and Windows x
 
 ### Run the development panel
 
-Install or link `bundle/` into the Adobe CEP extensions directory under the folder name `bodygroovn`, then run:
+Create a symlink named `bodygroovn` in the Adobe CEP extensions directory that points to this repository's `bundle/` directory, then run:
 
 ```sh
 mise exec -- node scripts/ci/run-yarn.mjs start
 ```
 
-The development manifest opens `http://127.0.0.1:3000/`. After changing ExtendScript, the manifest, or the Node server, close and reopen the panel or reload it from CEP developer tools; the Vite server cannot reload the After Effects host process for you.
+Do not copy `bundle/` in isolation: the development server and PNG worker resolve their pinned runtime packages from this repository's immutable `node_modules`. The development manifest opens `http://127.0.0.1:3000/`. After changing ExtendScript, the manifest, or the Node server, close and reopen the panel or reload it from CEP developer tools; the Vite server cannot reload the After Effects host process for you.
 
 ### Build and verify
 
