@@ -2,12 +2,17 @@
 
 # dependencies
 node_modules
+.pnp.*
+.yarn/cache/
+.yarn/install-state.gz
+.yarn/unplugged/
 
 # testing
 coverage
 
 # production
 build
+artifacts/
 
 # misc
 .DS_Store
@@ -18,4 +23,5 @@ bodymovinCert.p12
 bodymovin.zxp
 ZXPSignCmd.exe
 package-lock.json
-test/
+*.p12
+*.zxp

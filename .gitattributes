@@ -1,0 +1,7 @@
+* text=auto eol=lf
+
+# These inputs are copied or hashed byte-for-byte during production builds.
+.yarn/plugins/@echoscript-yarn-plugin.cjs text eol=lf
+lib/CSInterface/CSInterface.js text eol=lf
+player/lottie.js text eol=lf
+player/lottie.min.js text eol=lf

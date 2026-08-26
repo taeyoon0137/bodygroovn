@@ -1,0 +1,13 @@
+[tools]
+node = "24.19.0"
+"aqua:yarnpkg/berry" = "4.18.0"
+
+[settings]
+activate_aggressive = true
+lockfile = true
+lockfile_platforms = [
+  "linux-x64",
+  "macos-x64",
+  "macos-arm64",
+  "windows-x64",
+]
