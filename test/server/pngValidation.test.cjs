@@ -1,8 +1,13 @@
 'use strict';
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 const test = require('node:test');
 
-const { crc32, inspectPng } = require('../../bundle/server/pngWorker');
+const UPNG = require('upng-js');
+
+const { crc32, inspectPng, processPng } = require('../../bundle/server/pngWorker');
 const limits = { imagePixels: 64 * 1024 * 1024, imageDecoded: 1024 * 1024 * 1024 };
 
 function chunk(type, data) {
@@ -29,6 +34,26 @@ function png(options = {}) {
   return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), ...chunks]);
 }
 
+function staticPng(size = 64) {
+  const rgba = new Uint8Array(size * size * 4);
+  for (let index = 0; index < rgba.length; index += 4) {
+    rgba[index] = (index / 4) % 256;
+    rgba[index + 1] = Math.floor(index / 256) % 256;
+    rgba[index + 2] = (index / 8) % 256;
+    rgba[index + 3] = 255;
+  }
+  return Buffer.from(UPNG.encode([rgba.buffer], size, size, 0));
+}
+
+function addTextChunk(buffer, size) {
+  const iendOffset = buffer.length - 12;
+  return Buffer.concat([
+    buffer.subarray(0, iendOffset),
+    chunk('tEXt', Buffer.alloc(size, 65)),
+    buffer.subarray(iendOffset),
+  ]);
+}
+
 test('validates PNG chunks, CRC, IEND, limits, and preserved variants', () => {
   assert.deepEqual(inspectPng(png(), limits), { width: 1, height: 1, bitDepth: 8, interlace: 0, animated: false });
   assert.equal(inspectPng(png({ animated: true }), limits).animated, true);
@@ -38,4 +63,77 @@ test('validates PNG chunks, CRC, IEND, limits, and preserved variants', () => {
   assert.throws(() => inspectPng(corrupt, limits), /INVALID_CRC/);
   assert.throws(() => inspectPng(png({ width: 100000, height: 100000 }), limits), /IMAGE_TOO_LARGE/);
   assert.throws(() => inspectPng(Buffer.from('not png'), limits), /INVALID_PNG/);
+});
+
+test('preserves unsupported PNG variants byte-for-byte and returns one specific warning', async (t) => {
+  const root = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bodygroovn-png-preserve-'));
+  t.after(() => fs.promises.rm(root, { recursive: true, force: true }));
+  const variants = [
+    ['animated.png', png({ animated: true }), 'APNG_PRESERVED'],
+    ['sixteen-bit.png', png({ bitDepth: 16 }), 'PNG_BIT_DEPTH_PRESERVED'],
+    ['interlaced.png', png({ interlace: 1 }), 'INTERLACED_PNG_PRESERVED'],
+  ];
+
+  for (const [name, original, warning] of variants) {
+    const pathname = path.join(root, name);
+    await fs.promises.writeFile(pathname, original);
+    const result = await processPng({ pathname, paletteColors: 32, limits });
+    assert.deepEqual(result, { changed: false, path: pathname, extension: 'png', warnings: [warning] });
+    assert.deepEqual(await fs.promises.readFile(pathname), original);
+  }
+});
+
+test('keeps the original static PNG when palette encoding is not smaller', async (t) => {
+  const root = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bodygroovn-png-smaller-'));
+  t.after(() => fs.promises.rm(root, { recursive: true, force: true }));
+  const pathname = path.join(root, 'already-small.png');
+  const original = staticPng();
+  await fs.promises.writeFile(pathname, original);
+
+  const result = await processPng({ pathname, paletteColors: 256, limits });
+
+  assert.equal(result.changed, false);
+  assert.deepEqual(result.warnings, []);
+  assert.deepEqual(await fs.promises.readFile(pathname), original);
+});
+
+test('atomically replaces a static PNG only when palette encoding is smaller', async (t) => {
+  const root = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bodygroovn-png-replace-'));
+  t.after(() => fs.promises.rm(root, { recursive: true, force: true }));
+  const pathname = path.join(root, 'compressible.png');
+  const original = addTextChunk(staticPng(), 4096);
+  await fs.promises.writeFile(pathname, original);
+
+  const result = await processPng({ pathname, paletteColors: 32, limits });
+  const processed = await fs.promises.readFile(pathname);
+
+  assert.equal(result.changed, true);
+  assert.ok(processed.length < original.length);
+  assert.deepEqual(inspectPng(processed, limits), {
+    width: 64,
+    height: 64,
+    bitDepth: 8,
+    interlace: 0,
+    animated: false,
+  });
+  assert.deepEqual((await fs.promises.readdir(root)).filter((name) => name.endsWith('.tmp')), []);
+});
+
+test('cleans up its sibling temporary file when atomic replacement fails', async (t) => {
+  const root = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bodygroovn-png-atomic-'));
+  t.after(() => fs.promises.rm(root, { recursive: true, force: true }));
+  const pathname = path.join(root, 'compressible.png');
+  const original = addTextChunk(staticPng(), 4096);
+  await fs.promises.writeFile(pathname, original);
+  t.mock.method(fs.promises, 'rename', async () => {
+    throw Object.assign(new Error('rename failed'), { code: 'EACCES' });
+  });
+
+  await assert.rejects(
+    processPng({ pathname, paletteColors: 32, limits }),
+    /rename failed/,
+  );
+
+  assert.deepEqual(await fs.promises.readFile(pathname), original);
+  assert.deepEqual((await fs.promises.readdir(root)).filter((name) => name.endsWith('.tmp')), []);
 });

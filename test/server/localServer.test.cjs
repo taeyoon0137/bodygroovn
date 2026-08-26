@@ -8,7 +8,32 @@ const test = require('node:test');
 
 const UPNG = require('upng-js');
 
-const { createServer, validSplitName } = require('../../bundle/server/main');
+const { LIMITS, createServer, validSplitName } = require('../../bundle/server/main');
+const { crc32 } = require('../../bundle/server/pngWorker');
+
+function pngChunk(type, data) {
+  const name = Buffer.from(type);
+  const output = Buffer.alloc(data.length + 12);
+  output.writeUInt32BE(data.length, 0);
+  name.copy(output, 4);
+  data.copy(output, 8);
+  output.writeUInt32BE(crc32(Buffer.concat([name, data])), data.length + 8);
+  return output;
+}
+
+function syntheticPng(width, height) {
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(width, 0);
+  ihdr.writeUInt32BE(height, 4);
+  ihdr[8] = 8;
+  ihdr[9] = 6;
+  return Buffer.concat([
+    Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+    pngChunk('IHDR', ihdr),
+    pngChunk('IDAT', Buffer.alloc(0)),
+    pngChunk('IEND', Buffer.alloc(0)),
+  ]);
+}
 
 async function fixture(options = {}) {
   const root = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bodygroovn-server-'));
@@ -33,6 +58,28 @@ test('binds ephemerally, authenticates, rotates tokens, and exposes only allowed
   assert.equal((await f.request('/ping')).status, 401);
 });
 
+test('uses the exact server limits and HTTP timeout contract', async (t) => {
+  assert.deepEqual(LIMITS, {
+    envelope: 32 * 1024,
+    encodeFile: 128 * 1024 * 1024,
+    typeRead: 8192,
+    imageFile: 256 * 1024 * 1024,
+    imagePixels: 64 * 1024 * 1024,
+    imageDecoded: 1024 * 1024 * 1024,
+    splitFile: 64 * 1024 * 1024,
+    splitCount: 1000,
+    pathBytes: 4096,
+    workerQueue: 4,
+    workerTimeout: 60 * 1000,
+    requestTimeout: 75 * 1000,
+  });
+  const f = await fixture();
+  t.after(async () => { await f.controller.close(); await fs.promises.rm(f.root, { recursive: true, force: true }); });
+  assert.equal(f.controller.server.requestTimeout, 75 * 1000);
+  assert.equal(f.controller.server.keepAliveTimeout, 5 * 1000);
+  assert.equal(f.controller.server.headersTimeout, 10 * 1000);
+});
+
 test('enforces envelopes, content type, registered roots, and symlink realpaths', async (t) => {
   const f = await fixture();
   t.after(async () => { await f.controller.close(); await fs.promises.rm(f.root, { recursive: true, force: true }); });
@@ -48,6 +95,33 @@ test('enforces envelopes, content type, registered roots, and symlink realpaths'
   const link = path.join(f.root, 'escape');
   await fs.promises.symlink(outside, link);
   assert.equal((await f.request('/encode', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: encodeURIComponent(link) }) })).status, 403);
+  const overlongPath = `/${'a'.repeat(LIMITS.pathBytes)}`;
+  const overlongResponse = await f.request('/encode', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: encodeURIComponent(overlongPath) }) });
+  assert.equal(overlongResponse.status, 400);
+  assert.equal((await overlongResponse.json()).error.code, 'INVALID_PATH');
+});
+
+test('rejects sparse files at the encode and image route limits without reading them', async (t) => {
+  const f = await fixture();
+  t.after(async () => { await f.controller.close(); await fs.promises.rm(f.root, { recursive: true, force: true }); });
+  const encodePath = path.join(f.root, 'oversize-encode.bin');
+  const imagePath = path.join(f.root, 'oversize-image.png');
+  await fs.promises.truncate(encodePath, LIMITS.encodeFile + 1).catch(async (error) => {
+    if (error.code !== 'ENOENT') throw error;
+    await fs.promises.writeFile(encodePath, '');
+    await fs.promises.truncate(encodePath, LIMITS.encodeFile + 1);
+  });
+  await fs.promises.writeFile(imagePath, '');
+  await fs.promises.truncate(imagePath, LIMITS.imageFile + 1);
+
+  for (const [route, body] of [
+    ['/encode', { path: encodeURIComponent(encodePath) }],
+    ['/processImage', { path: encodeURIComponent(imagePath), paletteColors: 32 }],
+  ]) {
+    const response = await f.request(route, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    assert.equal(response.status, 413, route);
+    assert.equal((await response.json()).error.code, 'FILE_TOO_LARGE');
+  }
 });
 
 test('validates split basenames without rejecting Unicode or spaces', () => {
@@ -185,6 +259,26 @@ test('processes a static PNG through the worker and keeps PNG output', async (t)
   assert.equal(payload.data.extension, 'png');
   assert.deepEqual(payload.data.warnings, []);
   assert.equal((await fs.promises.readFile(pathname)).subarray(1, 4).toString('ascii'), 'PNG');
+});
+
+test('maps corrupt CRC and decoded image overflow to their route errors', async (t) => {
+  const f = await fixture();
+  t.after(async () => { await f.controller.close(); await fs.promises.rm(f.root, { recursive: true, force: true }); });
+  const corruptPath = path.join(f.root, 'corrupt.png');
+  const corrupt = syntheticPng(1, 1);
+  corrupt[corrupt.length - 1] ^= 1;
+  await fs.promises.writeFile(corruptPath, corrupt);
+  const oversizedPath = path.join(f.root, 'decoded-too-large.png');
+  await fs.promises.writeFile(oversizedPath, syntheticPng(100000, 100000));
+
+  for (const [pathname, status, code] of [
+    [corruptPath, 422, 'INVALID_PNG_CRC'],
+    [oversizedPath, 413, 'IMAGE_TOO_LARGE'],
+  ]) {
+    const response = await f.request('/processImage', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: encodeURIComponent(pathname), paletteColors: 32 }) });
+    assert.equal(response.status, status, pathname);
+    assert.equal((await response.json()).error.code, code);
+  }
 });
 
 test('limits the single-worker queue and times out stalled work', async (t) => {

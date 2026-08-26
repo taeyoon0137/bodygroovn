@@ -72,4 +72,22 @@ describe('composition settings migration', () => {
 
     expect(settings.png_palette_colors).toBe(64)
   })
+
+  it('removes all legacy compression fields idempotently', () => {
+    const migrated = restoreComposition({
+      original_assets: false,
+      should_compress: true,
+      compression_rate: 80,
+      enableCompression: true,
+      compression: 80,
+    })
+    const migratedAgain = restoreComposition(migrated)
+
+    expect(migratedAgain.png_palette_colors).toBe(256)
+    expect(migratedAgain).not.toHaveProperty('should_compress')
+    expect(migratedAgain).not.toHaveProperty('compression_rate')
+    expect(migratedAgain).not.toHaveProperty('enableCompression')
+    expect(migratedAgain).not.toHaveProperty('compression')
+    expect(migratedAgain).toEqual(migrated)
+  })
 })

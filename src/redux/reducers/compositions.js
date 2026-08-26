@@ -144,6 +144,8 @@ function migratePngSettings(settings) {
   migratedSettings.png_palette_colors = getPaletteColors(migratedSettings)
   delete migratedSettings.should_compress
   delete migratedSettings.compression_rate
+  delete migratedSettings.enableCompression
+  delete migratedSettings.compression
   delete migratedSettings.banner
   delete migratedSettings.avd
   if (migratedSettings.export_modes) {
