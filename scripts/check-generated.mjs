@@ -1,4 +1,4 @@
-import { readFile } from 'node:fs/promises'
+import { access, readFile } from 'node:fs/promises'
 
 const guard = '/* eslint-disable */var define = define || null;'
 const [playerSource, previewSource] = await Promise.all([
@@ -11,4 +11,11 @@ if (previewSource !== expected) {
   throw new Error('src/lottie.js is stale; run yarn build to regenerate it from player/lottie.js')
 }
 
-console.log('Verified src/lottie.js generation relationship.')
+try {
+  await access(new URL('../src/bodymovin.js', import.meta.url))
+  throw new Error('src/bodymovin.js must remain deleted; src/lottie.js is the only preview player source')
+} catch (error) {
+  if (error.code !== 'ENOENT') throw error
+}
+
+console.log('Verified the preview player generation relationship and obsolete source absence.')

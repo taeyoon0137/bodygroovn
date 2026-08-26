@@ -5,6 +5,8 @@ import process from 'node:process'
 import { fileURLToPath } from 'node:url'
 import { gunzipSync } from 'node:zlib'
 
+import { assertPayloadInventory } from './payload-inventory.mjs'
+
 const projectRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)))
 const payloadRoot = path.resolve(process.argv[2] || path.join(projectRoot, 'build', 'bodygroovn'))
 const manifestPath = path.resolve(
@@ -59,7 +61,16 @@ function assertExactChildren(files, directory, expected) {
   }
 }
 
+async function assertExactInventory(files) {
+  const inventoryPath = path.join(projectRoot, 'release', 'payload-inventory.txt')
+  const expected = (await readFile(inventoryPath, 'utf8'))
+    .split(/\r?\n/)
+    .filter(Boolean)
+  assertPayloadInventory(files.map(file => file.path), expected)
+}
+
 const files = await inventory(payloadRoot)
+await assertExactInventory(files)
 assertExactChildren(files, 'assets/player', ['demo.html', 'lottie.js', 'lottie.js.gz', 'standalone.js'])
 assertExactChildren(files, 'lib/CSInterface', ['CSInterface.js'])
 assertExactChildren(files, 'server', ['main.js', 'package.json', 'pngWorker.js'])

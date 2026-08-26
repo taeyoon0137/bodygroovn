@@ -1,6 +1,10 @@
+import { createHash } from 'node:crypto'
 import { access, readFile, readdir } from 'node:fs/promises'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
+
+import escodegen from 'escodegen'
+import esprima from 'esprima'
 
 const defaultRepositoryRoot = process.cwd()
 
@@ -174,6 +178,101 @@ function rendererArrayDefinitions(contents, name) {
   ))
 }
 
+function astPropertyName(property) {
+  if (!property || property.type !== 'Property') return null
+  if (!property.computed && property.key.type === 'Identifier') return property.key.name
+  if (property.key.type === 'Literal' && typeof property.key.value === 'string') return property.key.value
+  return null
+}
+
+function rendererMemberName(node) {
+  if (!node || node.type !== 'MemberExpression' || node.computed
+    || node.object.type !== 'Identifier' || node.object.name !== 'rendererTypes'
+    || node.property.type !== 'Identifier') return null
+  return node.property.name
+}
+
+function walkAst(node, visit) {
+  if (!node || typeof node !== 'object') return
+  visit(node)
+  for (const [key, child] of Object.entries(node)) {
+    if (key === 'range' || key === 'loc' || key === 'raw') continue
+    if (Array.isArray(child)) child.forEach(item => walkAst(item, visit))
+    else if (child && typeof child === 'object') walkAst(child, visit)
+  }
+}
+
+export function extractRendererMessageContract(relativePath, contents, removedRenderers = []) {
+  const ast = esprima.parseScript(contents)
+  const rendererArrays = new Map()
+  walkAst(ast, (node) => {
+    if (node.type !== 'VariableDeclarator' || node.id.type !== 'Identifier' || node.init?.type !== 'ArrayExpression') return
+    const renderers = node.init.elements.map(rendererMemberName)
+    if (renderers.length && renderers.every(Boolean)) rendererArrays.set(node.id.name, renderers)
+  })
+
+  const entries = []
+  function resolveRenderers(node) {
+    let renderers
+    if (node.type === 'ArrayExpression') renderers = node.elements.map(rendererMemberName)
+    else if (node.type === 'Identifier') renderers = rendererArrays.get(node.name)
+    else if (node.type === 'LogicalExpression' || node.type === 'MemberExpression') return null
+    if (!renderers || !renderers.length || !renderers.every(Boolean)) {
+      throw new Error(`${relativePath} contains an unresolved renderer membership`)
+    }
+    return renderers.filter(renderer => !removedRenderers.includes(renderer))
+  }
+
+  function visit(node, context = []) {
+    if (!node || typeof node !== 'object') return
+    if (node.type === 'ObjectExpression') {
+      const rendererProperty = node.properties.find(property => astPropertyName(property) === 'renderers')
+      if (rendererProperty) {
+        const renderers = resolveRenderers(rendererProperty.value)
+        if (renderers) {
+          if (!renderers.length) throw new Error(`${relativePath} contains an empty retained renderer membership`)
+          entries.push({
+            file: relativePath,
+            ordinal: entries.length,
+            context: context.join(' > '),
+            message: escodegen.generate({
+              type: 'ObjectExpression',
+              properties: node.properties.filter(property => property !== rendererProperty),
+            }, { format: { compact: true } }),
+            renderers,
+          })
+        }
+      }
+      node.properties.forEach(property => visit(property, context))
+      return
+    }
+    if (node.type === 'Property') {
+      const name = astPropertyName(node)
+      visit(node.value, name === null ? context : [...context, name])
+      return
+    }
+    if (node.type === 'VariableDeclarator') {
+      visit(node.init, node.id.type === 'Identifier' ? [...context, node.id.name] : context)
+      return
+    }
+    if (node.type === 'FunctionDeclaration') {
+      visit(node.body, node.id ? [...context, node.id.name] : context)
+      return
+    }
+    if (node.type === 'ArrayExpression') {
+      node.elements.forEach((element, index) => visit(element, [...context, `[${index}]`]))
+      return
+    }
+    for (const [key, child] of Object.entries(node)) {
+      if (key === 'range' || key === 'loc' || key === 'raw') continue
+      if (Array.isArray(child)) child.forEach(item => visit(item, context))
+      else if (child && typeof child === 'object') visit(child, context)
+    }
+  }
+  visit(ast)
+  return entries
+}
+
 export async function checkRendererContract(repositoryRoot = defaultRepositoryRoot) {
   const reportsRoot = path.join(repositoryRoot, 'bundle/jsx/reports')
   const rendererTypesSource = await readFile(path.join(reportsRoot, 'rendererTypes.jsx'), 'utf8')
@@ -185,7 +284,7 @@ export async function checkRendererContract(repositoryRoot = defaultRepositoryRo
     ['ANDROID', 'android'],
   ], 'Renderer type definitions differ from the retained contract')
 
-  const reportFiles = await collectTextFiles(repositoryRoot, 'bundle/jsx/reports')
+  const reportFiles = (await collectTextFiles(repositoryRoot, 'bundle/jsx/reports')).sort()
   const definitions = {
     allRetainedRenderers: [],
     onlyBrowserRenderers: [],
@@ -220,6 +319,30 @@ export async function checkRendererContract(repositoryRoot = defaultRepositoryRo
     [['BROWSER', 'IOS', 'ANDROID'], ['BROWSER', 'IOS', 'ANDROID']],
     'defaultRenderers definitions differ from the retained contract',
   )
+
+  const semanticContract = JSON.parse(await readFile(
+    path.join(repositoryRoot, 'release', 'retained-renderer-contract.json'),
+    'utf8',
+  ))
+  if (semanticContract.schemaVersion !== 1
+    || semanticContract.baselineCommit !== '2a2686484c3347939e781684674ec50a78f37c9b'
+    || semanticContract.removedRenderer !== 'SKOTTIE'
+    || !Number.isSafeInteger(semanticContract.messageCount)
+    || !/^[0-9a-f]{64}$/.test(semanticContract.messagesSha256)) {
+    throw new Error('Retained renderer semantic contract metadata is invalid')
+  }
+  const currentMessages = []
+  for (const relativePath of reportFiles) {
+    const contents = await readFile(path.join(repositoryRoot, relativePath), 'utf8')
+    currentMessages.push(...extractRendererMessageContract(relativePath, contents))
+  }
+  const currentMessagesSha256 = createHash('sha256')
+    .update(JSON.stringify(currentMessages))
+    .digest('hex')
+  if (currentMessages.length !== semanticContract.messageCount
+    || currentMessagesSha256 !== semanticContract.messagesSha256) {
+    throw new Error('Report messages or retained renderer memberships differ from the archived baseline')
+  }
 }
 
 export async function verifyRemovedFeatures(repositoryRoot = defaultRepositoryRoot) {
