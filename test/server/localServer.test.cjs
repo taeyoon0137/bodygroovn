@@ -180,7 +180,7 @@ test('rejects sparse files at the encode and image route limits without reading 
 
 test('validates split basenames without rejecting Unicode or spaces', () => {
   assert.equal(validSplitName('Café animation 01'), true);
-  for (const name of ['', '.', '..', 'a/b', 'a\\b', 'bad:name', `bad${String.fromCharCode(0)}name`, 'x'.repeat(256)]) assert.equal(validSplitName(name), false, name);
+  for (const name of ['', '.', '..', 'a/b', 'a\\b', 'bad:name', `bad${String.fromCharCode(0)}name`, `bad${String.fromCharCode(0x85)}name`, `bad${String.fromCharCode(0x9f)}name`, 'x'.repeat(256)]) assert.equal(validSplitName(name), false, JSON.stringify(name));
 });
 
 test('rejects a missing split basename instead of treating it as a filename', async (t) => {
@@ -378,12 +378,13 @@ test('returns explicit 400, 408, 422, and 500 statuses', async (t) => {
   assert.equal(failedResponse.status, 500);
 });
 
-test('reads at most 8192 bytes for type detection and accepts every palette value', async (t) => {
+test('reads at most 8192 bytes for type detection without an encode-size ceiling and accepts every palette value', async (t) => {
   let detectedLength = 0;
   const f = await fixture({ fileTypeDetector: async (buffer) => { detectedLength = buffer.length; return { ext: 'test', mime: 'application/x-test' }; } });
   t.after(async () => { await f.controller.close(); await fs.promises.rm(f.root, { recursive: true, force: true }); });
   const pathname = path.join(f.root, 'large.bin');
   await fs.promises.writeFile(pathname, Buffer.alloc(20000));
+  await fs.promises.truncate(pathname, LIMITS.encodeFile + 1);
   const typeResponse = await f.request('/getType', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: encodeURIComponent(pathname) }) });
   assert.equal(typeResponse.status, 200);
   assert.equal(detectedLength, 8192);
