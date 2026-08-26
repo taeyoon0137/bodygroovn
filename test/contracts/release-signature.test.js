@@ -43,4 +43,14 @@ describe('release signature verification contract', () => {
     expect(bootstrap).toContain("'--global', '--prefix', toolchainRoot")
     expect(bootstrap).toContain("requireEnvironmentPath('GITHUB_PATH')")
   })
+
+  it('preserves byte-exact build inputs across platform checkouts', () => {
+    const attributes = fs.readFileSync('.gitattributes', 'utf8')
+
+    expect(attributes).toContain('* text=auto eol=lf')
+    expect(attributes).toContain('.yarn/plugins/@echoscript-yarn-plugin.cjs text eol=lf')
+    expect(attributes).toContain('lib/CSInterface/CSInterface.js text eol=lf')
+    expect(attributes).toContain('player/lottie.js text eol=lf')
+    expect(attributes).toContain('player/lottie.min.js text eol=lf')
+  })
 })
