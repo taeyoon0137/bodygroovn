@@ -66,6 +66,7 @@ const forbiddenSourcePatterns = [
   { label: 'Howler runtime', pattern: /(?:\bHowl(?:er)?\b|['"]howler['"]|require\(['"]howler['"]\))/i },
   { label: 'cat fact helper', pattern: /catFactHelper/i },
   { label: 'NASA helper', pattern: /nasaHelper/i },
+  { label: 'NASA or cat-fact importer UI', pattern: /(?:importData\.(?:image|fact)|props\.(?:image\.img_src|fact\.text)|processing_cat_fact|picture from Mars|cat fact)/i },
 ]
 
 const removedDependencyNames = new Set([

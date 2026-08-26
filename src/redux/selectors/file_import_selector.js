@@ -9,8 +9,6 @@ const getFontsViewData = createSelector(
   		pendingCommands: importData.pendingCommands,
   		messages: importData.messages,
   		state: importData.state,
-  		image: importData.image,
-  		fact: importData.fact,
   	}
   }
 )
