@@ -66,7 +66,6 @@ class Message extends React.Component {
     android: 'Android',
     ios: 'iOS',
     browser: 'Browser',
-    skottie: 'Skottie',
   }
 
   buildIcon = type => (

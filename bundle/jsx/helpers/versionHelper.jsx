@@ -3,18 +3,24 @@
 $.__bodymovin.bm_versionHelper = (function () {
     var ob = {};
     var _version;
-    var version_number = '4.8.0';
+    var compatibilityVersion = '5.12.0';
+    var productVersion = '5.12.0';
 
     function setVersion(data) {
         _version = data;
     }
 
     function getVersion() {
-        return version_number;
+        return compatibilityVersion;
     }
 
-    ob.set = setVersion
-    ob.get = getVersion
+    function getProductVersion() {
+        return productVersion;
+    }
+
+    ob.set = setVersion;
+    ob.get = getVersion;
+    ob.getProductVersion = getProductVersion;
 
     return ob;
 }());

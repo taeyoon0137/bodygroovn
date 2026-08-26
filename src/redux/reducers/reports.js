@@ -19,11 +19,6 @@ let initialState = {
 				isSelected: true,
 			},
 			{
-				id: 'skottie',
-				label: 'Skottie',
-				isSelected: true,
-			},
-			{
 				id: 'ios',
 				label: 'iOS',
 				isSelected: true,
@@ -267,6 +262,16 @@ function showLoadErrorMessage(state, action) {
 	}
 }
 
+function showSaveErrorMessage(state, action) {
+	return {
+		...state,
+		message: {
+			type: messageTypes.ALERT,
+			text: action.error || 'The animation report could not be saved.'
+		}
+	}
+}
+
 function handleLoadError(state, action) {
 	if (action.error && action.error.errorCode === errorCodes.FILE_CANCELLED) {
 		return state
@@ -299,6 +304,8 @@ export default function project(state = initialState, action) {
 	      return setStoredData(state, action)
 	    case actionTypes.REPORTS_LOAD_FAILED:
 	      return handleLoadError(state, action)
+	    case actionTypes.REPORTS_SAVE_FAILED:
+	      return showSaveErrorMessage(state, action)
 	    case actionTypes.REPORTS_ALERT_DISMISSED:
 	      return dismissAlertMessage(state, action)
 		default:

@@ -1,11 +1,7 @@
 import React from 'react'
 import { StyleSheet, css } from 'aphrodite'
 // import SettingsCollapsableItem from './collapsable/SettingsCollapsableItem'
-import SettingsBanner from './SettingsBanner'
 import SettingsStandard from './SettingsExportModeStandard'
-import SettingsAVD from './SettingsExportModeAVD'
-import SettingsSMIL from './SettingsExportModeSMIL'
-import SettingsFlare from './SettingsExportModeFlare'
 import SettingsDemo from './SettingsExportModeDemo'
 import SettingsStandalone from './SettingsExportModeStandalone'
 import SettingsReport from './SettingsExportModeReport'
@@ -53,19 +49,7 @@ class SettingsExportMode extends React.PureComponent {
               <SettingsReport />
             </div>
             <div className={css(styles.modeItem)}>
-              <SettingsFlare />
-            </div>
-            <div className={css(styles.modeItem)}>
               <SettingsStandalone />
-            </div>
-            <div className={css(styles.modeItem)}>
-              <SettingsBanner />
-            </div>
-            <div className={css(styles.modeItem)}>
-              <SettingsAVD />
-            </div>
-            <div className={css(styles.modeItem)}>
-              <SettingsSMIL />
             </div>
           </div>
         </div>

@@ -8,7 +8,7 @@ const getCurrentComp = (state) => {
 	return state.compositions.current
 }
 
-const settingsBannerSelector = createSelector(
+const settingsStandardSelector = createSelector(
   [getItems, getCurrentComp ],
   (items, current) => {
 
@@ -21,4 +21,4 @@ const settingsBannerSelector = createSelector(
   }
 )
 
-export default settingsBannerSelector
+export default settingsStandardSelector

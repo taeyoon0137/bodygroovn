@@ -12,12 +12,8 @@ $.__bodymovin.bm_settingsHelper = (function () {
         return _settings
     }
 
-    function shouldCompressImages() {
-        return _settings.should_compress && !_settings.original_assets;
-    }
-
-    function getCompressionQuality() {
-        return _settings.compression_rate;
+    function getPngPaletteColors() {
+        return _settings.original_assets ? 0 : _settings.png_palette_colors;
     }
 
     function shouldEncodeImages() {
@@ -127,8 +123,7 @@ $.__bodymovin.bm_settingsHelper = (function () {
 
     ob.set = setData
     ob.get = getData
-    ob.shouldCompressImages = shouldCompressImages;
-    ob.getCompressionQuality = getCompressionQuality;
+    ob.getPngPaletteColors = getPngPaletteColors;
     ob.shouldEncodeImages = shouldEncodeImages;
     ob.shouldSkipImages = shouldSkipImages;
     ob.shouldReuseImages = shouldReuseImages;

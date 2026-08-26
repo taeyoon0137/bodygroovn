@@ -7,6 +7,5 @@ $.__bodymovin.bm_reportRendererTypes = (function () {
         BROWSER: 'browser',
         IOS: 'ios',
         ANDROID: 'android',
-        SKOTTIE: 'skottie',
     };
 }());

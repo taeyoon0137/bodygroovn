@@ -5,11 +5,11 @@ import {
 	createFolder,
 } from '../../FileLoader'
 import {
-	getSeparator
+	getSeparator,
+	getSimpleSeparator,
 } from '../../osHelper'
 import sendCommand from './commandHelper'
 import random from '../../randomGenerator'
-import nodePath from '../../path_proxy'
 
 const LOTTIE_IMAGES_IMPORT = 'lottie_images_import';
 
@@ -23,7 +23,7 @@ async function importLottieAssetsFromPath(assets, path) {
 			const assetId = random(10);
 			let animationPath, assetName;
 			if (!asset.e) {
-				animationPath = path.substr(0, path.lastIndexOf(nodePath.sep) + 1);
+				animationPath = path.substr(0, path.lastIndexOf(getSimpleSeparator()) + 1);
 				assetName = asset.u + asset.p;
 			} else {
 				animationPath = getLocalPath('Project') + getSeparator() + LOTTIE_IMAGES_IMPORT + getSeparator();

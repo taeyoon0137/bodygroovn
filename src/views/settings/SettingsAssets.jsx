@@ -32,13 +32,13 @@ class SettingsAssets extends React.PureComponent {
         {this.props.canCompressAssets &&
         !isUsingOriginalAssets &&  
         <SettingsListItem 
-          title='Enable compression'
-          description='Set compression ratio for image layers (0-100)'
-          toggleItem={this.props.toggleCompressImages}
+          title='PNG palette compression'
+          description='Palette colors: 0, 32, 64, 128, or 256. Use 0 to preserve PNG pixels.'
+          toggleItem={this.props.togglePngCompression}
           needsInput={true} 
-          inputValue={this.props.settings ? this.props.settings.compression_rate : 0} 
-          inputValueChange={this.props.qualityChange}
-          active={this.props.settings ? this.props.settings.should_compress : false}  />
+          inputValue={this.props.settings ? this.props.settings.png_palette_colors : 0}
+          inputValueChange={this.props.paletteColorsChange}
+          active={this.props.settings ? this.props.settings.png_palette_colors !== 0 : false}  />
         }
         <SettingsListItem 
           title='Include in json'

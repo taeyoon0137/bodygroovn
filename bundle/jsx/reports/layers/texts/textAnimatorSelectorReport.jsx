@@ -14,13 +14,11 @@ $.__bodymovin.bm_textSelectorReport = (function () {
     var defaultRenderers = [
         rendererTypes.BROWSER,
         rendererTypes.IOS,
-        rendererTypes.ANDROID,
-        rendererTypes.SKOTTIE
+        rendererTypes.ANDROID
     ];
     var onlyBrowserRenderers = [
         rendererTypes.IOS,
-        rendererTypes.ANDROID,
-        rendererTypes.SKOTTIE
+        rendererTypes.ANDROID
     ];
 
     var defaultMessageType = messageTypes.ERROR;

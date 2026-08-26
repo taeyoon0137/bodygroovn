@@ -23,7 +23,6 @@ $.__bodymovin.bm_layerStylesGradientOverlayFactory = (function () {
     GradientOverlay.prototype.processStyle = function() {
         this.addMessage(messageTypes.WARNING,
         [
-            rendererTypes.SKOTTIE,
             rendererTypes.BROWSER,
             rendererTypes.IOS,
             rendererTypes.ANDROID,

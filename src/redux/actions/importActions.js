@@ -65,20 +65,6 @@ function lottieImportFileFailed() {
 	}
 }
 
-function nasaImageLoaded(data) {
-	return {
-		type: actionTypes.NASA_IMAGE_LOADED,
-		data,
-	}
-}
-
-function catFactLoaded(data) {
-	return {
-		type: actionTypes.CAT_FACT_LOADED,
-		data,
-	}
-}
-
 export {
 	importLottieFile,
 	importLottieFileFromUrl,
@@ -90,6 +76,4 @@ export {
 	lottieProcessFailed,
 	lottieImportFileSuccess,
 	lottieImportFileFailed,
-	nasaImageLoaded,
-	catFactLoaded,
 }

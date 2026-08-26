@@ -1,6 +1,6 @@
 import React from 'react'
-import {connect} from 'react-redux'
 import { StyleSheet, css } from 'aphrodite'
+import { getProductVersion } from '../../helpers/version'
 
 const styles = StyleSheet.create({
   wrapper: {
@@ -15,16 +15,12 @@ const styles = StyleSheet.create({
   }
 })
 
-class Footer extends React.PureComponent {
-
-	render() {
-      return (<div className={css(styles.wrapper)}>{'Version: ' + this.props.version}
-      </div>)
-	}
+function Footer() {
+  return (
+    <div className={css(styles.wrapper)}>
+      {'Version: ' + getProductVersion()}
+    </div>
+  )
 }
 
-function mapStateToProps(state) {
-  return {version: state.project.version}
-}
-
-export default connect(mapStateToProps, null)(Footer)
+export default Footer

@@ -1,0 +1,56 @@
+.bodygroovn-color-picker {
+  width: 220px;
+  padding: 10px;
+  border-radius: 4px;
+  background: #fff;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.12), 0 8px 18px rgba(0, 0, 0, 0.2);
+  color: #333;
+}
+
+.bodygroovn-color-picker .react-colorful {
+  width: 100%;
+  height: 150px;
+}
+
+.bodygroovn-color-picker__fields {
+  display: grid;
+  grid-template-columns: 1.75fr repeat(3, 1fr);
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.bodygroovn-color-picker__fields label {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 10px;
+  text-align: center;
+}
+
+.bodygroovn-color-picker__fields input {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  padding: 4px;
+  border: 1px solid #ccc;
+  border-radius: 2px;
+  font: inherit;
+  text-align: center;
+}
+
+.bodygroovn-color-picker__presets {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 5px;
+  margin-top: 10px;
+}
+
+.bodygroovn-color-picker__presets button {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 1px solid rgba(0, 0, 0, 0.2);
+  border-radius: 2px;
+  cursor: pointer;
+}

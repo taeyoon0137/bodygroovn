@@ -7,9 +7,9 @@ class BodymovinToggle extends React.PureComponent {
 		this.checkAnimation = this.checkAnimation.bind(this)
 	}
 
-	componentWillReceiveProps(props) {
-		if (props.toggle !== this.props.toggle) {
-			if(props.toggle === 'on') {
+	componentDidUpdate(prevProps) {
+		if (this.props.toggle !== prevProps.toggle) {
+			if(this.props.toggle === 'on') {
 				this.bm_instance.setDirection(1)
 			} else {
 				this.bm_instance.setDirection(-1)

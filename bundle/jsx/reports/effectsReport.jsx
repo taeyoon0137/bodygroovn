@@ -90,8 +90,7 @@ $.__bodymovin.bm_effectsReportFactory = (function () {
             [
                 rendererTypes.BROWSER,
                 rendererTypes.IOS,
-                rendererTypes.ANDROID,
-                rendererTypes.SKOTTIE
+                rendererTypes.ANDROID
             ]);
         message.addEffect(effect.name);
     }

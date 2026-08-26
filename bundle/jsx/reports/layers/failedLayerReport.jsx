@@ -22,7 +22,6 @@ $.__bodymovin.bm_failedLayerReport = (function () {
         this.addMessage(messageTypes.WARNING,
         [
             rendererTypes.BROWSER,
-            rendererTypes.SKOTTIE,
             rendererTypes.IOS,
             rendererTypes.ANDROID,
         ],

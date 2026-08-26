@@ -86,7 +86,7 @@ class Player extends React.Component {
           </Bodymovin>
         </div>
         <div className={css(styles.text_container)}>
-            <div className={css(styles.text_title)}>Bodymovin</div>
+            <div className={css(styles.text_title)}>bodygroovn</div>
             <div className={css(styles.text_par)}>
               <p>This plugin exports After Effects animations to a web compatible format.</p>
               <p>In order to play the exported animation on your browser follow the instructions at 

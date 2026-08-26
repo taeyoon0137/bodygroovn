@@ -16,8 +16,6 @@ const layerTypes = {
     light : 14
 }
 
-let animationSegments
-
 function random(len) {
     var sequence = 'abcdefghijklmnoqrstuvwxyz1234567890', returnString = '', i;
     for (i = 0; i < len; i += 1) {
@@ -64,16 +62,40 @@ function moveCompsAssetsToCompsArray(data) {
 	data.comps = comps;
 }
 
-function splitAnimation(data, time) {
+function createSegmentationPlan(data, time, maxSegments) {
+    var frameRate = data && data.fr;
+    var inPoint = data && data.ip;
+    var outPoint = data && data.op;
+    var segmentLength = time * frameRate;
+    if (!Number.isFinite(frameRate) || frameRate <= 0 || !Number.isFinite(inPoint) || !Number.isFinite(outPoint) || outPoint <= inPoint || !Number.isFinite(time) || time <= 0 || !Number.isFinite(segmentLength) || segmentLength <= 0) {
+        var invalidError = new Error('The animation timing values are invalid.');
+        invalidError.code = 'INVALID_ANIMATION_TIMING';
+        throw invalidError;
+    }
+    var iterationCount = Math.max(0, Math.ceil((outPoint - inPoint) / segmentLength) - 1);
+    if (!Number.isSafeInteger(iterationCount) || iterationCount > maxSegments) {
+        var limitError = new Error('The animation exceeds the segment limit.');
+        limitError.code = 'TOO_MANY_SEGMENTS';
+        throw limitError;
+    }
+    return {
+        frameRate: frameRate,
+        segmentLength: segmentLength,
+        totalFrames: outPoint - inPoint,
+        iterationCount: iterationCount,
+    };
+}
+
+function splitAnimation(data, time, animationSegments, plan, maxSegments) {
 	moveCompsAssetsToCompsArray(data);
     var comps = data.comps;
     var layers = data.layers;
-    var frameRate = data.fr;
-    var totalFrames = data.op - data.ip;
+    var frameRate = plan.frameRate;
+    var totalFrames = plan.totalFrames;
     var i, len = layers.length, j, jLen;
-    var currentSegment = time * frameRate;
-    var segmentLength = time * frameRate;
-    animationSegments = [];
+    var currentSegment = plan.segmentLength;
+    var segmentLength = plan.segmentLength;
+    var iterationCount = 0;
     var currentPeriod, segments, segmentComps;
     for (i = 0; i < len; i += 1) {
         if (layers[i].ip < currentSegment) {
@@ -107,6 +129,12 @@ function splitAnimation(data, time) {
     var timeData;
     
     while (currentSegment < totalFrames) {
+        iterationCount += 1;
+        if (iterationCount > maxSegments || iterationCount > plan.iterationCount) {
+            var limitError = new Error('The animation exceeds the segment limit.');
+            limitError.code = 'TOO_MANY_SEGMENTS';
+            throw limitError;
+        }
         currentPeriod = null;
         segmentComps = null;
         for (i = 0; i < len; i += 1) {
@@ -156,8 +184,11 @@ function splitAnimation(data, time) {
     data.segments = segments;
 }
 
-function split(data, time) {
-	splitAnimation(data, time)
+function split(data, time, maxSegments) {
+	var segmentLimit = Number.isSafeInteger(maxSegments) && maxSegments > 0 ? maxSegments : 1000;
+	var plan = createSegmentationPlan(data, time, segmentLimit);
+	var animationSegments = [];
+	splitAnimation(data, time, animationSegments, plan, segmentLimit)
 	
 	//
 	return {
@@ -166,4 +197,5 @@ function split(data, time) {
 	};
 }
 
+split.createSegmentationPlan = createSegmentationPlan;
 module.exports = split;

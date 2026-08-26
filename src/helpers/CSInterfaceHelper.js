@@ -1,5 +1,6 @@
-import {CSInterface} from './CSInterface'
 import extensionLoader from './ExtensionLoader'
+/* global CSInterface */
+
 var csInterface = new CSInterface();
 
 function sendCommand(prefix, commandName, commandArguments = []) {

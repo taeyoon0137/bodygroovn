@@ -5,19 +5,33 @@ $.__bodymovin.bm_layerCollectionReport = (function () {
     
     var layerReportHelper = $.__bodymovin.bm_layerReportHelper;
     var bm_eventDispatcher = $.__bodymovin.bm_eventDispatcher;
+    var scheduledMethods = {};
+    var scheduledMethodId = 0;
 
-    function LayerCollection(layers, onComplete, onFail) {
+    function runScheduledMethod(id) {
+        var method = scheduledMethods[id];
+        delete scheduledMethods[id];
+        if (method) {
+            method();
+        }
+    }
+
+    function LayerCollection(layers, onComplete, onFail, isActive) {
         this.layers = layers;
         this.collection = [];
         this.currentLayerIndex = 0;
         this._onComplete = onComplete;
         this._onFail = onFail;
+        this._isActive = isActive || function () { return true; };
         this.onLayerComplete = this.onLayerComplete.bm_bind(this);
         this.onLayerFailed = this.onLayerFailed.bm_bind(this);
         this.processCurrentLayer = this.processCurrentLayer.bm_bind(this);
     }
 
     LayerCollection.prototype.process = function() {
+        if (!this._isActive()) {
+            return;
+        }
         var layers = this.layers;
         var collection = this.collection;
         var i, len = layers.length;
@@ -30,6 +44,9 @@ $.__bodymovin.bm_layerCollectionReport = (function () {
     }
     
     LayerCollection.prototype.processCurrentLayer = function() {
+        if (!this._isActive()) {
+            return;
+        }
         try {
             var currentLayer = this.collection[this.currentLayerIndex];
             if (currentLayer) {
@@ -43,11 +60,18 @@ $.__bodymovin.bm_layerCollectionReport = (function () {
     }
 
     LayerCollection.prototype.asynchronouslyProcessCurrentLayer = function() {
-        $.__bodymovin.reportScheduledMethod = this.processCurrentLayer;
-        app.scheduleTask('$.__bodymovin.reportScheduledMethod();', 20, false);
+        if (!this._isActive()) {
+            return;
+        }
+        scheduledMethodId += 1;
+        scheduledMethods[scheduledMethodId] = this.processCurrentLayer;
+        app.scheduleTask('$.__bodymovin.bm_layerCollectionReport.runScheduledMethod(' + scheduledMethodId + ');', 20, false);
     }
 
     LayerCollection.prototype.onLayerFailed = function(error) {
+        if (!this._isActive()) {
+            return;
+        }
         if (error) {
             bm_eventDispatcher.log(error.message);
             bm_eventDispatcher.log(error.line);
@@ -63,6 +87,9 @@ $.__bodymovin.bm_layerCollectionReport = (function () {
     }
 
     LayerCollection.prototype.onLayerComplete = function() {
+        if (!this._isActive()) {
+            return;
+        }
         this.currentLayerIndex += 1;
         this.asynchronouslyProcessCurrentLayer();
     }
@@ -77,9 +104,11 @@ $.__bodymovin.bm_layerCollectionReport = (function () {
         }
     }
 
+    var factory = function(layers, onComplete, onFail, isActive) {
+        return new LayerCollection(layers, onComplete, onFail, isActive);
+    };
+    factory.runScheduledMethod = runScheduledMethod;
 
-    return function(layers, onComplete, onFail) {
-    	return new LayerCollection(layers, onComplete, onFail);
-    }
+    return factory;
     
 }());

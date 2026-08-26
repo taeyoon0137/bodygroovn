@@ -1,8 +1,7 @@
+import {getSimpleSeparator} from './osHelper'
+
 const getDelimiter = () => {
-  const delimiter = window.cep_node.process.platform.indexOf('win') !== -1
-    ? '\\'
-    : '/'
-  return delimiter
+  return getSimpleSeparator()
 }
 
 export default getDelimiter

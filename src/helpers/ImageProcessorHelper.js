@@ -1,124 +1,42 @@
-import { getPort } from './enums/networkData';
-import { fetchWithId } from '../helpers/FileLoader';
-var path = require('path');
-path.parse = function(_path){
-	return {
-		dir:''
-	}
-}
+import { fetchWithId, readServerResponse } from './FileLoader'
+import { getPaletteColors } from './pngSettings'
 
-function compressImage(path, compression_rate) {
-	path = path.replace(/\\/g, '/')
-	return new Promise((resolve, reject) => {
-		fetchWithId(`http://localhost:${getPort()}/processImage/`, 
-			{
-				method: 'post',
-				headers: {
-					'Accept': 'application/json',
-					'Content-Type': 'application/json'
-				},
-				body: JSON.stringify({
-					path: encodeURIComponent(path),
-					compression: compression_rate
-				})
-			})
-		.then(async (response) => {
-			const jsonResponse = await response.json()
-			if (jsonResponse.status === 'error') {
-				resolve({
-					path,
-					extension: 'png',
-				})
-			} else {
-				setTimeout(() => {
-					resolve({
-						path: jsonResponse.path,
-						extension: jsonResponse.extension,
-					})
-				}, 1)
-			}
-		})
-		.catch((err) => {
-			console.log('ERROR', err)
-		})
-	})
-}
-
-function handleImageCompression(path, settings) {
-	if(settings.should_compress) {
-		return compressImage(path, settings.compression_rate)
-	} else {
-		return Promise.resolve({
-			path,
-			extension: 'png',
-		})
-	}
+async function processPng(path, paletteColors) {
+    const response = await fetchWithId('/processImage', {
+        method: 'post',
+        headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: encodeURIComponent(path.replace(/\\/g, '/')), paletteColors })
+    })
+    return readServerResponse(response)
 }
 
 async function getEncodedFile(path) {
-	const encodedImageResponse = await fetchWithId(`http://localhost:${getPort()}/encode/`, 
-	{
-		method: 'post',
-		headers: {
-			'Accept': 'application/json',
-			'Content-Type': 'application/json'
-		},
-		body: JSON.stringify({
-			path: encodeURIComponent(path),
-		})
-	})
-	const jsonResponse = await encodedImageResponse.json()
-	return jsonResponse.data
-
+    const response = await fetchWithId('/encode', {
+        method: 'post',
+        headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: encodeURIComponent(path) })
+    })
+    return (await readServerResponse(response)).base64
 }
 
 async function processImage(actionData) {
-	let path = actionData.path
-
-	try {
-
-		if (!actionData.should_encode_images && !actionData.should_compress) {
-			return {
-				encoded: false,
-			}
-		}
-		const imageCompressedData = await handleImageCompression(path, actionData)
-
-		if (actionData.should_encode_images) {
-
-			const imagePath = imageCompressedData.extension === 'png' ? 
-				imageCompressedData.path
-				:
-				imageCompressedData.path.substr(0, imageCompressedData.path.lastIndexOf('.png')) + '.jpg'
-
-			var fileExtension = imagePath.substr(imagePath.lastIndexOf('.') + 1)
-
-			let encodedImage = await getEncodedFile(imagePath)
-
-			if (actionData.assetType === 'audio') {
-				encodedImage = `data:audio/mp3;base64,${encodedImage}`
-			} else {
-				encodedImage = `data:image/${fileExtension === 'png' ? 'png' : 'jpeg'};base64,${encodedImage}`
-			}
-			return {
-				encoded_data: encodedImage,
-				encoded: true,
-				extension: imageCompressedData.extension
-			}
-			// const image = await loadImage(imagePath)
-			// return await encode(image, actionData)
-		} else {
-			return {
-				new_path: imageCompressedData.path,
-				encoded: false,
-				extension: imageCompressedData.extension
-			}
-		}
-	} catch(err) {
-		return {
-			encoded: false,
-		}
-	}
+    const path = actionData.path
+    const extensionMatch = /\.([^.\\/]+)$/.exec(path)
+    const sourceExtension = extensionMatch ? extensionMatch[1].toLowerCase() : ''
+    const isPng = actionData.assetType !== 'audio' && sourceExtension === 'png'
+    const paletteColors = isPng ? getPaletteColors(actionData) : 0
+    if (!actionData.should_encode_images && paletteColors === 0) return { encoded: false, extension: sourceExtension || 'png' }
+    const processed = isPng
+        ? await processPng(path, paletteColors)
+        : { path, extension: sourceExtension, warnings: [] }
+    if (actionData.should_encode_images) {
+        let encodedImage = await getEncodedFile(processed.path)
+        encodedImage = actionData.assetType === 'audio'
+            ? `data:audio/mp3;base64,${encodedImage}`
+            : `data:image/${sourceExtension === 'jpg' ? 'jpeg' : sourceExtension};base64,${encodedImage}`
+        return { encoded_data: encodedImage, encoded: true, extension: sourceExtension, warnings: processed.warnings }
+    }
+    return { new_path: processed.path, encoded: false, extension: sourceExtension, warnings: processed.warnings }
 }
 
 export default processImage

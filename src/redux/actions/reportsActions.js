@@ -16,6 +16,14 @@ function reportsSaved(compId, reportPath) {
 	}
 }
 
+function reportsSaveFailed(compId, error) {
+	return {
+		type: actionTypes.REPORTS_SAVE_FAILED,
+		compId,
+		error,
+	}
+}
+
 function reportsLoaded(data) {
 	return {
 		type: actionTypes.REPORTS_LOAD_SUCCESS,
@@ -66,6 +74,7 @@ function alertDismissed() {
 export {
 	navigateToLayer,
 	reportsSaved,
+	reportsSaveFailed,
 	reportsLoaded,
 	reportsLoadFailed,
 	renderersUpdated,

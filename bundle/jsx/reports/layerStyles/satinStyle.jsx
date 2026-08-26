@@ -23,7 +23,6 @@ $.__bodymovin.bm_layerStylesSatinFactory = (function () {
     Satin.prototype.processStyle = function() {
         this.addMessage(messageTypes.WARNING,
         [
-            rendererTypes.SKOTTIE,
             rendererTypes.BROWSER,
             rendererTypes.IOS,
             rendererTypes.ANDROID,

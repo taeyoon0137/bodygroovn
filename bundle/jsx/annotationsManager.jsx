@@ -289,10 +289,6 @@ $.__bodymovin.bm_annotationsManager = (function () {
                 data.sourceAsId = prop.value === 1 ? false : true;
             } else if (prop.matchName === 'Pseudo/Bodymovin Asset Props-0003') {
                 data.copyAsset = prop.value === 1 ? false : true;
-            } else if (prop.matchName === 'Pseudo/Bodymovin Asset Props-0004') {
-                data.enableCompression = prop.value === 1 ? false : true;
-            } else if (prop.matchName === 'Pseudo/Bodymovin Asset Props-0005') {
-                data.compression = prop.value;
             } else if (prop.matchName === 'Pseudo/Bodymovin Asset Props-0006') {
                 data.includeInJson = prop.value === 1 ? false : true;
             } else if (prop.matchName === 'Pseudo/Bodymovin Asset Props-0007') {

@@ -1,0 +1,14 @@
+{
+  "changelog": "@changesets/cli/changelog",
+  "commit": false,
+  "fixed": [],
+  "linked": [],
+  "access": "restricted",
+  "baseBranch": "main",
+  "ignore": [],
+  "format": false,
+  "privatePackages": {
+    "version": true,
+    "tag": false
+  }
+}

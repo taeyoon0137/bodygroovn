@@ -7,10 +7,10 @@ class BodymovinCheckbox extends React.Component {
 		this.checkAnimation = this.checkAnimation.bind(this)
 	}
 
-	componentWillReceiveProps(props) {
-		if (props.animate && !this.props.animate) {
+	componentDidUpdate(prevProps) {
+		if (this.props.animate && !prevProps.animate) {
 			this.bm_instance.goToAndPlay(0)
-		} else if (!props.animate && this.props.animate) {
+		} else if (!this.props.animate && prevProps.animate) {
 			this.bm_instance.goToAndStop(0)
 		}
 	}

@@ -71,46 +71,12 @@ const styles = StyleSheet.create({
       lineHeight: '18px',
       marginTop: '10px',
     },
-    processing_message: {
-      color: '#ffffff',
-      fontSize: '12px',
-      lineHeight: '14px',
-      marginTop: '10px',
-      width: '100%',
-    },
-    processing_image_container: {
-      marginTop: '10px',
-      width: '100%',
-      textAlign:'center',
-    },
-    processing_image: {
-      maxWidth: '100%',
-    },
-    processing_cat_fact_container: {
-      padding: '20px',
-      minHeight: '40px',
-    },
-    processing_cat_fact_title: {
-      fontWeight: 900,
-      fontSize: '14px',
-      letterSpacing: '0.1px',
-      marginBottom: '4px',
-    },
-    processing_cat_fact: {
-      backgroundColor: '#fff',
-      padding: '20px 0',
-      color: Variables.colors.gray_darkest,
-      fontWeight: 900,
-      fontSize: '16px',
-      lineHeight: '18px',
-      textAlign: 'center',
-    },
     link: {
       color: Variables.colors.green
     },
 })
 
-class FileImport extends React.Component {
+export class FileImport extends React.Component {
 
   constructor(props) {
     super(props)
@@ -214,34 +180,6 @@ class FileImport extends React.Component {
           <span>
             Estimated remaining time: {Math.ceil(props.pendingCommands * 50 / 1000)} seconds
           </span>
-        </div>
-        <div className={css(styles.processing_message)}>
-          {!!props.image.img_src && 
-            <div>
-              <div>
-                Here is a picture from Mars
-              </div>
-              <div className={css(styles.processing_image_container)}>
-                <img 
-                  className={css(styles.processing_image)}
-                  src={props.image.img_src} 
-                  alt={'mars ' + (props.image.earth_date || '')}
-                />
-              </div>
-            </div>
-          }
-          {!!props.fact.text && 
-            <div>
-              <div className={css(styles.processing_cat_fact_container)}>
-                <div className={css(styles.processing_cat_fact_title)}>
-                  This process might take some time. Here is a cat fact.
-                </div>
-                <div className={css(styles.processing_cat_fact)}>
-                  {props.fact.text}
-                </div>
-              </div>
-            </div>
-          }
         </div>
       </div>
     )

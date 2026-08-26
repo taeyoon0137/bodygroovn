@@ -4,8 +4,6 @@ let initialState = {
 	state: 'idle',
   pendingCommands: 0,
   messages: [],
-  image: {},
-  fact: {},
 }
 
 function handleProcessStart(state, action) {
@@ -51,20 +49,6 @@ function handleProcessFailed(state, action) {
   }
 }
 
-function handleImageLoaded(state, action) {
-  return {
-    ...state,
-    image: action.data,
-  }
-}
-
-function handleCatFactLoaded(state, action) {
-  return {
-    ...state,
-    fact: action.data,
-  }
-}
-
 function handleLeave(state, action) {
   return {
     ...state,
@@ -95,10 +79,6 @@ export default function project(state = initialState, action) {
       return handleCancel(state, action);
     case actionTypes.IMPORT_LEAVE:
       return handleLeave(state, action);
-    case actionTypes.NASA_IMAGE_LOADED:
-      return handleImageLoaded(state, action);
-    case actionTypes.CAT_FACT_LOADED:
-      return handleCatFactLoaded(state, action);
     default:
       return state
   }

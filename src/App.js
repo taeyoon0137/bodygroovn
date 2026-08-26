@@ -1,4 +1,4 @@
-import React, { Component } from 'react'
+import { Component } from 'react'
 import { Provider } from 'react-redux'
 import { applyMiddleware, compose, createStore } from 'redux'
 import ViewsContainer from './views/ViewsContainer'
@@ -16,7 +16,7 @@ import {appInitialized, appFocused} from './redux/actions/generalActions'
 
 const sagaMiddleware = createSagaMiddleware()
 
-let composeStore = compose(
+const composeStore = compose(
   applyMiddleware(
     sagaMiddleware,
     extendScriptMiddleware,
@@ -24,23 +24,23 @@ let composeStore = compose(
   )
 )(createStore)
 
-let store = composeStore(reducer)
+const store = composeStore(reducer)
 sagaMiddleware.run(rootSaga)
+setDispatcher(store.dispatch)
 
 
 class App extends Component {
-
-  componentWillMount() {
-    setDispatcher(store.dispatch)
-  }
-
   componentDidMount() {
-    window.onfocus = function(){
+    this.previousFocusHandler = window.onfocus
+    window.onfocus = function() {
       store.dispatch(appFocused())
     }
     store.dispatch(appInitialized())
   }
 
+  componentWillUnmount() {
+    window.onfocus = this.previousFocusHandler
+  }
 
   render() {
 

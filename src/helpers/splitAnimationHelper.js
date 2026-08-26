@@ -1,8 +1,7 @@
-import { getPort } from './enums/networkData'
-import { fetchWithId } from './FileLoader'
+import { fetchWithId, readServerResponse } from './FileLoader'
 
 const splitAnimation = async (origin, destination, fileName, time) => {
-	const encodedImageResponse = await fetchWithId(`http://localhost:${getPort()}/splitAnimation/`, 
+	const encodedImageResponse = await fetchWithId('/splitAnimation',
 	{
 		method: 'post',
 		headers: {
@@ -16,12 +15,8 @@ const splitAnimation = async (origin, destination, fileName, time) => {
 			time: time,
 		})
 	})
-	const jsonResponse = await encodedImageResponse.json()
-	if(jsonResponse.status === 'success') {
-		return jsonResponse.totalSegments;
-	} else {
-		throw new Error(jsonResponse.message);
-	}
+	const data = await readServerResponse(encodedImageResponse)
+	return data.totalSegments
 }
 
 export {

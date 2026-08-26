@@ -10,8 +10,18 @@ $.__bodymovin.bm_standaloneExporter = (function () {
 	var _callback;
 	var ob = {}
 
+	function finish(status) {
+		if (_callback) {
+			var callback = _callback;
+			_callback = null;
+			callback(exporterHelpers.exportTypes.STANDALONE, status);
+		}
+	}
+
 	function save(destinationPath, config, callback) {
 		_callback = callback;
+		var transaction = exporterHelpers.createTransaction();
+		try {
 
 		if (config.export_modes.standalone) {
 			var destinationData = exporterHelpers.parseDestination(destinationPath, 'standalone');
@@ -26,20 +36,23 @@ $.__bodymovin.bm_standaloneExporter = (function () {
 		    animationStringData = bodymovinJsStr.replace("\"__[ANIMATIONDATA]__\"",  animationStringData );
 		    animationStringData = animationStringData.replace("\"__[STANDALONE]__\"", 'true');
 		    
-			exporterHelpers.saveAssets(rawFiles, destinationData.folder);
+			exporterHelpers.saveAssets(rawFiles, destinationData.folder, transaction);
 
-			destinationFile.open('w', 'TEXT', '????');
-			destinationFile.encoding = 'UTF-8';
-			try {
-			    destinationFile.write(animationStringData); //DO NOT ERASE, JSON UNFORMATTED
-			    //destinationFile.write(JSON.stringify(ob.renderData.exportData, null, '  ')); //DO NOT ERASE, JSON FORMATTED
-			    destinationFile.close();
-			    _callback(exporterHelpers.exportTypes.STANDALONE, exporterHelpers.exportStatuses.SUCCESS);
-			} catch (err) {
-				_callback(exporterHelpers.exportTypes.STANDALONE, exporterHelpers.exportStatuses.FAILED);
-			}
+			exporterHelpers.writeTextFile(destinationFile, animationStringData, transaction); //DO NOT ERASE, JSON UNFORMATTED
+			//destinationFile.write(JSON.stringify(ob.renderData.exportData, null, '  ')); //DO NOT ERASE, JSON FORMATTED
+			exporterHelpers.commitTransaction(transaction);
+			finish(exporterHelpers.exportStatuses.SUCCESS);
 		} else {
-			_callback(exporterHelpers.exportTypes.STANDALONE, exporterHelpers.exportStatuses.SUCCESS);
+			finish(exporterHelpers.exportStatuses.SUCCESS);
+		}
+		} catch (error) {
+			try {
+				exporterHelpers.rollbackTransaction(transaction);
+			} catch (rollbackError) {
+				// Preserve failed completion even if Adobe cannot restore a destination.
+			} finally {
+				finish(exporterHelpers.exportStatuses.FAILED);
+			}
 		}
 	}
 

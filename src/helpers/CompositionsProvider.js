@@ -7,13 +7,9 @@ import extensionLoader from './ExtensionLoader'
 import {dispatcher} from './storeDispatcher'
 import actions from '../redux/actions/actionTypes'
 import {versionFetched, appVersionFetched} from '../redux/actions/generalActions'
-import {reportsSaved} from '../redux/actions/reportsActions'
+import {reportsSaved, reportsSaveFailed} from '../redux/actions/reportsActions'
 import {processExpression} from '../redux/actions/renderActions'
-import {saveFile as bannerSaveFile} from './bannerHelper'
-import {saveFile as avdSaveFile} from './avdHelper'
-import {saveFile as smilSaveFile} from './smilHelper'
 import {splitAnimation} from './splitAnimationHelper'
-import {createSlots} from './lottieSlots'
 import { getSimpleSeparator } from './osHelper'
 
 csInterface.addEventListener('bm:compositions:list', function (ev) {
@@ -89,21 +85,13 @@ csInterface.addEventListener('bm:image:process', function (ev) {
 	if(ev.data) {
 		let data = (typeof ev.data === "string") ? JSON.parse(ev.data) : ev.data
 		
-		//Fix for AE 2014
-		if(data && data.should_compress === 'false') {
-			data.should_compress = false
-		}
+		// Fix boolean values returned as strings by older After Effects versions.
 		if(data && data.should_encode_images === 'false') {
 			data.should_encode_images = false
-
 		}
-		if(data && typeof data.compression_rate === 'string') {
-			data.compression_rate = Number(data.compression_rate)
+		if(data && typeof data.png_palette_colors === 'string') {
+			data.png_palette_colors = Number(data.png_palette_colors)
 		}
-		if(data && typeof data.compression_rate === 'string') {
-			data.compression_rate = Number(data.compression_rate)
-		}
-		//End fix for AE 2014
 
 		dispatcher({ 
 				type: actions.RENDER_PROCESS_IMAGE,
@@ -152,59 +140,22 @@ csInterface.addEventListener('bm:project:path', function (ev) {
 	}
 })
 
-csInterface.addEventListener('bm:composition:destination_set', function (ev) {
-	if(ev.data) {
-		let compositionData = (typeof ev.data === "string") ? JSON.parse(ev.data) : ev.data
-		dispatcher({ 
-				type: actions.COMPOSITION_SET_DESTINATION,
-				compositionData: compositionData
+csInterface.addEventListener('bm:composition:destination_set', async function (ev) {
+	try {
+		if (!ev.data) {
+			throw new Error('Missing composition destination data')
+		}
+		const compositionData = (typeof ev.data === 'string') ? JSON.parse(ev.data) : ev.data
+		await window.__bodygroovnNodeBridge.setExportDestination(compositionData.destination)
+		dispatcher({
+			type: actions.COMPOSITION_SET_DESTINATION,
+			compositionData,
 		})
-	} else {
-	}
-})
-
-csInterface.addEventListener('bm:create:avd', async function (ev) {
-	if(ev.data) {
-		try {
-			let data = (typeof ev.data === "string") ? JSON.parse(ev.data) : ev.data;
-			await avdSaveFile(data.origin, data.destination)
-			// let animationData = JSON.parse(data.animation);
-			// saveAVD(animationData, data.destination);
-			const eScript = "$.__bodymovin.bm_avdExporter.saveAVDDataSuccess()";
-	    	csInterface.evalScript(eScript);
-		} catch(err) {
-	    	const eScript = '$.__bodymovin.bm_avdExporter.saveAVDFailed()';
-	    	csInterface.evalScript(eScript);
-		} 
-	} else {
-	}
-})
-
-csInterface.addEventListener('bm:create:smil', async function (ev) {
-	if(ev.data) {
-		try {
-			let data = (typeof ev.data === "string") ? JSON.parse(ev.data) : ev.data;
-			await smilSaveFile(data.origin, data.destination)
-			const eScript = "$.__bodymovin.bm_smilExporter.saveSMILDataSuccess()";
-	    	csInterface.evalScript(eScript);
-		} catch(err) {
-	    	const eScript = '$.__bodymovin.bm_smilExporter.saveSMILFailed()';
-	    	csInterface.evalScript(eScript);
-		} 
-	} else {
-	}
-})
-
-csInterface.addEventListener('bm:create:rive', function (ev) {
-	if(ev.data) {
-		let data = (typeof ev.data === "string") ? JSON.parse(ev.data) : ev.data;
-		dispatcher({ 
-				type: actions.RIVE_SAVE_DATA,
-				origin: data.origin,
-				destination: data.destination,
-				fileName: decodeURIComponent(data.fileName),
+	} catch (error) {
+		dispatcher({
+			type: actions.WRITE_ERROR,
+			pars: [error.message || 'Could not register the export destination.'],
 		})
-	} else {
 	}
 })
 
@@ -235,48 +186,18 @@ csInterface.addEventListener('app:version', function (ev) {
 	}
 })
 
-csInterface.addEventListener('bm:zip:banner', async function (ev) {
-	try {
-		if(ev.data) {
-			const data = (typeof ev.data === "string") ? JSON.parse(ev.data) : ev.data
-			////
-			await bannerSaveFile(data.folderPath, data.destinationPath);
-			csInterface.evalScript('$.__bodymovin.bm_bannerExporter.bannerFinished()');
-		} else {
-			throw new Error('Missing data')
-		}
-	} catch(err) {
-		csInterface.evalScript('$.__bodymovin.bm_bannerExporter.bannerFailed()');
-	}
-})
-
 csInterface.addEventListener('bm:split:animation', async function (ev) {
 	try {
 		if(ev.data) {
 			const data = (typeof ev.data === "string") ? JSON.parse(ev.data) : ev.data
 			////
-			const splitResponse = await splitAnimation(data.origin, data.destination, decodeURIComponent(data.fileName), data.time);
+			const splitResponse = await splitAnimation(data.origin, data.destination, data.fileName, data.time);
 			csInterface.evalScript('$.__bodymovin.bm_standardExporter.splitSuccess(' + splitResponse + ')');
 		} else {
 			throw new Error('Missing data')
 		}
 	} catch(err) {
-		csInterface.evalScript('$.__bodymovin.bm_bannerExporter.splitFailed()');
-	}
-})
-
-csInterface.addEventListener('bm:create:slots', async function (ev) {
-	try {
-		if(ev.data) {
-			const data = (typeof ev.data === "string") ? JSON.parse(ev.data) : ev.data
-			////
-			await createSlots(data.origin, data.destination, decodeURIComponent(data.fileName), data.prettyPrint);
-			csInterface.evalScript('$.__bodymovin.bm_standardExporter.slotsSuccess()');
-		} else {
-			throw new Error('Missing data')
-		}
-	} catch(err) {
-		csInterface.evalScript('$.__bodymovin.bm_bannerExporter.splitFailed()');
+		csInterface.evalScript('$.__bodymovin.bm_standardExporter.splitFailed()');
 	}
 })
 
@@ -290,21 +211,42 @@ csInterface.addEventListener('bm:report:saved', async function (ev) {
 			throw new Error('Missing data')
 		}
 	} catch(err) {
-		csInterface.evalScript('$.__bodymovin.bm_bannerExporter.splitFailed()');
+		dispatcher(reportsSaveFailed(null, err.message))
+	}
+})
+
+csInterface.addEventListener('bm:report:save:failed', function (ev) {
+	try {
+		const data = ev.data
+			? ((typeof ev.data === 'string') ? JSON.parse(ev.data) : ev.data)
+			: {}
+		dispatcher(reportsSaveFailed(data.compId, data.message))
+	} catch (err) {
+		dispatcher(reportsSaveFailed(null, err.message))
 	}
 })
 
 csInterface.addEventListener('bm:expression:process', async function (ev) {
+	let data
 	try {
 		if(ev.data) {
-			const data = (typeof ev.data === "string") ? JSON.parse(ev.data) : ev.data
-			////
+			data = (typeof ev.data === "string") ? JSON.parse(ev.data) : ev.data
+			if (!data || typeof data.id !== 'string' || !data.id || typeof data.text !== 'string') {
+				throw new Error('Malformed expression request')
+			}
 			dispatcher(processExpression(data));
 		} else {
 			throw new Error('Missing data')
 		}
 	} catch(err) {
-		csInterface.evalScript('$.__bodymovin.bm_bannerExporter.splitFailed()');
+		if (data && typeof data.id === 'string' && data.id) {
+			expressionProcessed(data.id, {hasFailed: true}, data.render_generation)
+		} else {
+			const generation = data && Number.isInteger(data.render_generation)
+				? data.render_generation
+				: 'undefined'
+			csInterface.evalScript('$.__bodymovin.bm_renderManager.expressionProcessingFailed(' + generation + ')')
+		}
 	}
 })
 
@@ -336,17 +278,6 @@ function getProjectPath() {
 	return prom
 }
 
-function setLottiePaths(paths) {
-	return new Promise(function(resolve, reject){
-		extensionLoader.then(function(){
-			
-			var eScript = '$.__bodymovin.bm_bannerExporter.setLottiePaths(' + JSON.stringify(paths) + ')';
-			csInterface.evalScript(eScript);
-			resolve();
-		})
-	})
-}
-
 function getDestinationPath(comp, alternatePath, shouldUseCompNameAsDefault) {
 	let destinationPath = ''
 	const fileName = shouldUseCompNameAsDefault ? comp.name : 'data'
@@ -361,8 +292,6 @@ function getDestinationPath(comp, alternatePath, shouldUseCompNameAsDefault) {
 		alternatePath += fileName
 		if(comp.settings.export_modes.standalone) {
 			alternatePath += '.js'
-		} else if (comp.settings.export_modes.banner && comp.settings.banner.zip_files) {
-			alternatePath += '.zip'
 		} else {
 			alternatePath += '.json'
 		}
@@ -371,8 +300,6 @@ function getDestinationPath(comp, alternatePath, shouldUseCompNameAsDefault) {
 	var extension = 'json'
 	if (comp.settings.export_modes.standalone) {
 		extension = 'js'
-	} else if (comp.settings.export_modes.banner && comp.settings.banner.zip_files) {
-		extension = 'zip'
 	}
 	extensionLoader.then(function(){
 		var eScript = '$.__bodymovin.bm_compsManager.searchCompositionDestination(' + comp.id + ',"' + destinationPath+ '","' + (fileName + '.' + extension) + '")'
@@ -384,15 +311,14 @@ function getDestinationPath(comp, alternatePath, shouldUseCompNameAsDefault) {
 	return prom
 }
 
-function renderNextComposition(comp) {
-	extensionLoader.then(function(){
-		var eScript = '$.__bodymovin.bm_compsManager.renderComposition(' + JSON.stringify(comp) + ')'
-		csInterface.evalScript(eScript)
-	})
-	let prom = new Promise(function(resolve, reject){
-		resolve()
-	})
-	return prom
+async function renderNextComposition(comp) {
+	if (!window.__bodygroovnNodeBridge) {
+		throw new Error('The bodygroovn Node bridge is not available.');
+	}
+	await window.__bodygroovnNodeBridge.setExportDestination(comp.destination)
+	await extensionLoader
+	var eScript = '$.__bodymovin.bm_compsManager.renderComposition(' + JSON.stringify(comp) + ')'
+	csInterface.evalScript(eScript)
 }
 
 function stopRenderCompositions() {
@@ -406,14 +332,15 @@ function stopRenderCompositions() {
 	return prom
 }
 
-function setFonts(fontsInfo) {
+function setFonts(fontsInfo, generation) {
 	let prom = new Promise(function(resolve, reject){
 		resolve()
 	})
 	var fontsInfoString = JSON.stringify({list:fontsInfo})
+	var renderGeneration = Number.isInteger(generation) ? generation : 'undefined'
 
 	extensionLoader.then(function(){
-	    var eScript = '$.__bodymovin.bm_renderManager.setFontData(' + fontsInfoString + ')'
+	    var eScript = '$.__bodymovin.bm_renderManager.setFontData(' + fontsInfoString + ',' + renderGeneration + ')'
 	    csInterface.evalScript(eScript)
 	})
 	return prom
@@ -439,20 +366,6 @@ function goToFolder(path) {
 	})
 }
 
-function riveFileSaveSuccess() {
-	extensionLoader.then(function(){
-		var eScript = '$.__bodymovin.bm_riveExporter.saveSuccess()';
-	    csInterface.evalScript(eScript);
-	})
-}
-
-function riveFileSaveFailed() {
-	extensionLoader.then(function(){
-		var eScript = '$.__bodymovin.bm_riveExporter.saveFailed()';
-	    csInterface.evalScript(eScript);
-	})
-}
-
 function getVersionFromExtension() {
 	let prom = new Promise(function(resolve, reject){
 		resolve()
@@ -467,13 +380,17 @@ function getVersionFromExtension() {
 function imageProcessed(result, data) {
 	extensionLoader.then(function(){
 		var eScript = ''
+		const generation = Number.isInteger(data.render_generation) ? data.render_generation : null
+		if (generation !== null) {
+			eScript += 'if ($.__bodymovin.bm_renderManager.isRenderActive(' + generation + ')) {'
+		}
 		if(data.assetType === 'audio') {
 			eScript += '$.__bodymovin.bm_audioSourceHelper.assetProcessed(';
 
 		} else {
 			eScript += '$.__bodymovin.bm_sourceHelper.imageProcessed(';
 		}
-		eScript += result.extension === 'jpg';
+		eScript += 'false';
 		eScript += ',';
 		if(result.encoded) {
 			eScript += '"' + result.encoded_data + '"'
@@ -481,12 +398,32 @@ function imageProcessed(result, data) {
 			eScript += 'null';
 		}
 		eScript += ')';
+		if (generation !== null) {
+			eScript += '}'
+		}
 	    csInterface.evalScript(eScript);
 	})
 }
 
-function initializeServer() {
-	csInterface.requestOpenExtension("com.bodymovin.bodymovin_server", "");
+function imageProcessingFailed(message, generation) {
+	extensionLoader.then(function(){
+		var eScript = '$.__bodymovin.bm_renderManager.imageProcessingFailed(' + JSON.stringify(message || 'Image processing failed.') + ',' + (Number.isInteger(generation) ? generation : 'undefined') + ')';
+		csInterface.evalScript(eScript);
+	})
+}
+
+async function initializeServer() {
+	if (!window.__bodygroovnNodeBridge) {
+		throw new Error('The bodygroovn Node bridge is not available.');
+	}
+	await window.__bodygroovnNodeBridge.getConnection();
+}
+
+async function restartServer() {
+	if (!window.__bodygroovnNodeBridge) {
+		throw new Error('The bodygroovn Node bridge is not available.');
+	}
+	await window.__bodygroovnNodeBridge.restart();
 }
 
 function navigateToLayer(compositionId, layerIndex) {
@@ -515,10 +452,10 @@ async function setCompositionTimelinePosition(progress) {
 	
 }
 
-function expressionProcessed(id, data) {
+function expressionProcessed(id, data, generation) {
 	sendAsyncCommand(
 		'$.__bodymovin.bm_expressionHelper.saveExpression',
-		[data, id],
+		[data, id, generation],
 	)
 }
 
@@ -602,10 +539,9 @@ export {
 	goToFolder,
 	getVersionFromExtension,
 	imageProcessed,
-	setLottiePaths,
+	imageProcessingFailed,
 	initializeServer,
-	riveFileSaveSuccess,
-	riveFileSaveFailed,
+	restartServer,
 	getProjectPath,
 	navigateToLayer,
 	getCompositionTimelinePosition,

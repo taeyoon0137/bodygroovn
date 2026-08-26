@@ -17,8 +17,13 @@ $.__bodymovin.bm_sourceHelper = (function () {
     , imageCount = 0, videoCount = 0
     , imageNameIndex = 0, fontCount = 0;
     var currentSavingAsset;
+    var currentRenderGeneration = 0;
     var _lastSecond = -1;
     var _lastMilliseconds = -1;
+
+    function isRenderGenerationActive(generation) {
+        return generation === currentRenderGeneration && bm_renderManager.isRenderActive(generation);
+    }
 
     function checkCompSource(item) {
         var arr = compSources;
@@ -162,7 +167,7 @@ $.__bodymovin.bm_sourceHelper = (function () {
     }
 
     function getImageName(originalName, generatedName, extension, metadata) {
-        
+
         var imageName;
 
         var originalNamesFlag = metadata ? metadata.originalAsset : settingsHelper.shouldUserOriginalNames();
@@ -270,7 +275,10 @@ $.__bodymovin.bm_sourceHelper = (function () {
     }
 
     // Adding time offset between renders to prevent AE bug when saving logs with the same name.
-    function scheduleNextSaveStilInSequence() {
+    function scheduleNextSaveStilInSequence(generation) {
+        if (!isRenderGenerationActive(generation)) {
+            return;
+        }
 
         var now = new Date();
         var newSecond = now.getSeconds();
@@ -279,14 +287,17 @@ $.__bodymovin.bm_sourceHelper = (function () {
         if (newSecond !== _lastSecond || originalAssetsFlag) {
             _lastSecond = newSecond;
             _lastMilliseconds = newMilliSeconds;
-            saveNextStillInSequence();
+            saveNextStillInSequence(generation);
         } else {
-            app.scheduleTask('$.__bodymovin.bm_sourceHelper.scheduleNextSaveStilInSequence();', (1000 - _lastMilliseconds), false);
+            app.scheduleTask('$.__bodymovin.bm_sourceHelper.scheduleNextSaveStilInSequence(' + generation + ');', (1000 - _lastMilliseconds), false);
         }
     }
 
     // Adding time offset between renders to prevent AE bug when saving logs with the same name.
-    function scheduleNextSaveImage() {
+    function scheduleNextSaveImage(generation) {
+        if (!isRenderGenerationActive(generation)) {
+            return;
+        }
 
         var now = new Date();
         var newSecond = now.getSeconds();
@@ -294,9 +305,9 @@ $.__bodymovin.bm_sourceHelper = (function () {
         if (newSecond !== _lastSecond) {
             _lastSecond = newSecond;
             _lastMilliseconds = newMilliSeconds;
-            saveNextImage();
+            saveNextImage(generation);
         } else {
-            app.scheduleTask('$.__bodymovin.bm_sourceHelper.scheduleNextSaveImage();', (1000 - _lastMilliseconds), false);
+            app.scheduleTask('$.__bodymovin.bm_sourceHelper.scheduleNextSaveImage(' + generation + ');', (1000 - _lastMilliseconds), false);
         }
     }
 
@@ -306,14 +317,17 @@ $.__bodymovin.bm_sourceHelper = (function () {
         _lastSecond = newSecond;
     }
 
-    function saveNextStillInSequence() {
+    function saveNextStillInSequence(generation) {
+        if (!isRenderGenerationActive(generation)) {
+            return;
+        }
 
         if (currentStillIndex === currentSequenceTotalFrames) {
             currentExportingImageSequenceIndex += 1;
             if (helperSequenceComp) {
                 helperSequenceComp.remove();
             }
-            saveNextImageSequence();
+            saveNextImageSequence(generation);
             return;
         }
 
@@ -366,7 +380,7 @@ $.__bodymovin.bm_sourceHelper = (function () {
 
             // Set cleanup.
             item.onStatusChanged = function() {
-                if (item.status === RQItemStatus.DONE) {
+                if (item.status === RQItemStatus.DONE && isRenderGenerationActive(generation)) {
                     updateCurrentSecond();
                     // Due to an apparent bug, "00000" is appended to the file extension.
                     // NOTE: This appears to be related to the "File Template" setting's
@@ -391,10 +405,10 @@ $.__bodymovin.bm_sourceHelper = (function () {
                         path: temporaryFolder.fsName + '/' + imageName, 
                         ***/
                         path: file.fsName, 
-                        should_compress: metadata ? metadata.enableCompression : settingsHelper.shouldCompressImages(), 
-                        compression_rate: (metadata ? metadata.compression : settingsHelper.getCompressionQuality())/100,
+                        png_palette_colors: originalAssetsFlag ? 0 : settingsHelper.getPngPaletteColors(),
                         should_encode_images: metadata ? metadata.includeInJson : settingsHelper.shouldEncodeImages(),
                         assetType: 'image',
+                        render_generation: generation,
 
 
                     })
@@ -426,13 +440,13 @@ $.__bodymovin.bm_sourceHelper = (function () {
                 path: temporaryFolder.fsName + '/' + imageName, 
                 ***/
                 path: file.fsName, 
-                should_compress: metadata ? metadata.enableCompression : settingsHelper.shouldCompressImages(), 
-                compression_rate: (metadata ? metadata.compression : settingsHelper.getCompressionQuality())/100,
+                png_palette_colors: originalAssetsFlag ? 0 : settingsHelper.getPngPaletteColors(),
                 should_encode_images: metadata ? metadata.includeInJson : settingsHelper.shouldEncodeImages(),
                 assetType: 'image',
+                render_generation: generation,
             })
         }
-        
+
     }
 
     function getNextImageName(text, index) {
@@ -463,7 +477,10 @@ $.__bodymovin.bm_sourceHelper = (function () {
         return '';
     }
 
-    function saveSequence() {
+    function saveSequence(generation) {
+        if (!isRenderGenerationActive(generation)) {
+            return;
+        }
         var currentSourceData = sequenceSourcesStills[currentExportingImageSequenceIndex];
         var metadata = currentSourceData.metadata;
         currentStillIndex = 0;
@@ -475,11 +492,14 @@ $.__bodymovin.bm_sourceHelper = (function () {
             helperSequenceComp = app.project.items.addComp('tempConverterComp', Math.max(4, currentSourceData.width), Math.max(4, currentSourceData.height), 1, (currentSourceData.totalFrames + 1) / frameRate, frameRate);
             helperSequenceComp.layers.add(currentSourceData.source);
         }
-        scheduleNextSaveStilInSequence();
+        scheduleNextSaveStilInSequence(generation);
 
     }
 
-    function saveVideo() {
+    function saveVideo(generation) {
+        if (!isRenderGenerationActive(generation)) {
+            return;
+        }
 
         var currentSourceData = videoSources[currentExportingVideoIndex];
         var sourceExtension = currentSourceData.source_name.substr(currentSourceData.source_name.lastIndexOf('.') + 1) || 'mp4';
@@ -499,41 +519,53 @@ $.__bodymovin.bm_sourceHelper = (function () {
         });
 
         currentExportingVideoIndex += 1;
-        app.scheduleTask('$.__bodymovin.bm_sourceHelper.saveNextVideo();', 20, false);
+        app.scheduleTask('$.__bodymovin.bm_sourceHelper.saveNextVideo(' + generation + ');', 20, false);
         
     }
 
-    function onDataFinishSave() {
-        finishImageSave();
+    function onDataFinishSave(generation) {
+        finishImageSave(generation);
     }
 
-    function onAudioFinishSave() {
-        dataSourceHelper.save(onDataFinishSave, assetsArray);
+    function onAudioFinishSave(generation) {
+        if (!isRenderGenerationActive(generation)) {
+            return;
+        }
+        dataSourceHelper.save(function () { onDataFinishSave(generation); }, assetsArray);
     }
 
-    function saveNextVideo() {
+    function saveNextVideo(generation) {
+        if (!isRenderGenerationActive(generation)) {
+            return;
+        }
         if (currentExportingVideoIndex === videoSources.length) {
-            audioSourceHelper.save(onAudioFinishSave, assetsArray);
+            audioSourceHelper.save(function () { onAudioFinishSave(generation); }, assetsArray, generation);
         } else {
-            saveVideo();
+            saveVideo(generation);
         }
     }
 
-    function saveNextImageSequence() {
+    function saveNextImageSequence(generation) {
+        if (!isRenderGenerationActive(generation)) {
+            return;
+        }
         if (currentExportingImageSequenceIndex === sequenceSourcesStills.length) {
-            saveNextVideo();
+            saveNextVideo(generation);
         } else {
-            saveSequence();
+            saveSequence(generation);
         }
     }
 
     //// IMAGE SEQUENCE FUNCTIONS END
 
-    function finishImageSave() {
+    function finishImageSave(generation) {
+        if (!isRenderGenerationActive(generation)) {
+            return;
+        }
 
         renderQueueHelper.restoreRenderQueue();
 
-        bm_renderManager.imagesReady();
+        bm_renderManager.imagesReady(generation);
     }
 
     function fixBugNameFile(imageName, fsName, suffix) {
@@ -549,12 +581,12 @@ $.__bodymovin.bm_sourceHelper = (function () {
         }
     }
     
-    function saveNextImage() {
-        if (bm_compsManager.cancelled) {
+    function saveNextImage(generation) {
+        if (!isRenderGenerationActive(generation) || bm_compsManager.cancelled) {
             return;
         }
         if (currentExportingImage === imageSources.length) {
-            saveNextImageSequence();
+            saveNextImageSequence(generation);
             return;
         }
         var currentSourceData = imageSources[currentExportingImage];
@@ -600,7 +632,7 @@ $.__bodymovin.bm_sourceHelper = (function () {
 
             // Set cleanup.
             item.onStatusChanged = function() {
-                if (item.status === RQItemStatus.DONE) {
+                if (item.status === RQItemStatus.DONE && isRenderGenerationActive(generation)) {
                     updateCurrentSecond();
                     // Due to an apparent bug, "00000" is appended to the file extension.
                     // NOTE: This appears to be related to the "File Template" setting's
@@ -622,9 +654,9 @@ $.__bodymovin.bm_sourceHelper = (function () {
                         path: temporaryFolder.fsName + '/' + imageName, 
                         ***/
                         path: file.fsName, 
-                        should_compress: metadata ? metadata.enableCompression : settingsHelper.shouldCompressImages(), 
-                        compression_rate: (metadata ? metadata.compression : settingsHelper.getCompressionQuality())/100,
-                        should_encode_images: metadata ? metadata.includeInJson : settingsHelper.shouldEncodeImages()
+                        png_palette_colors: originalAssetsFlag ? 0 : settingsHelper.getPngPaletteColors(),
+                        should_encode_images: metadata ? metadata.includeInJson : settingsHelper.shouldEncodeImages(),
+                        render_generation: generation,
                     })
                 }
             };
@@ -643,20 +675,19 @@ $.__bodymovin.bm_sourceHelper = (function () {
                 path: temporaryFolder.fsName + '/' + imageName, 
                 ***/
                 path: file.fsName, 
-                should_compress: metadata ? metadata.enableCompression : settingsHelper.shouldCompressImages(), 
-                compression_rate: (metadata ? metadata.compression : settingsHelper.getCompressionQuality())/100,
-                should_encode_images: metadata ? metadata.includeInJson : settingsHelper.shouldEncodeImages()
+                png_palette_colors: originalAssetsFlag ? 0 : settingsHelper.getPngPaletteColors(),
+                should_encode_images: metadata ? metadata.includeInJson : settingsHelper.shouldEncodeImages(),
+                render_generation: generation,
             })
         }
     }
 
     function imageProcessed(changedFlag, encoded_data) {
-        
-        //For now all images are pngs
-        if(changedFlag) {
-            currentSavingAsset.p = currentSavingAsset.p.replace(new RegExp('png' + '$'), 'jpg')
-            bm_fileManager.replaceFileExtension(currentSavingAsset.fileId, 'jpg');
+        var generation = currentRenderGeneration;
+        if (!isRenderGenerationActive(generation)) {
+            return;
         }
+
         if(encoded_data) {
             currentSavingAsset.p = encoded_data;
             currentSavingAsset.u = '';
@@ -665,10 +696,10 @@ $.__bodymovin.bm_sourceHelper = (function () {
         }
         if(currentSavingAsset.t === 'seq') {
             currentStillIndex += 1;
-            scheduleNextSaveStilInSequence();
+            scheduleNextSaveStilInSequence(generation);
         } else {
             currentExportingImage += 1;
-            scheduleNextSaveImage();
+            scheduleNextSaveImage(generation);
         }
     }
 
@@ -679,13 +710,19 @@ $.__bodymovin.bm_sourceHelper = (function () {
         }
     }
 
-    function exportImages(path, assets, compId, compUid) {
+    function exportImages(path, assets, compId, compUid, generation) {
+        if (!isRenderGenerationActive(generation)) {
+            return;
+        }
         if ((imageSources.length === 0 && sequenceSourcesStills.length === 0 && videoSources.length === 0 && audioSourceHelper.isEmpty() && dataSourceHelper.isEmpty()) || settingsHelper.shouldSkipImages()) {
-            bm_renderManager.imagesReady();
+            bm_renderManager.imagesReady(generation);
             return;
         }
         if (renderQueueHelper.renderQueueIsBusy()) {
-            bm_eventDispatcher.sendEvent('bm:alert', {message: 'Render queue is currently busy. \n\rCan\'t continue with render.\n\rCheck for elements in AE\'s render queue in a Rendering status, remove them and try again.'});
+            bm_renderManager.imageProcessingFailed(
+                'Render queue is currently busy. \n\rCan\'t continue with render.\n\rCheck for elements in AE\'s render queue in a Rendering status, remove them and try again.',
+                generation
+            );
             return;
         }
         currentCompID = compId;
@@ -693,7 +730,7 @@ $.__bodymovin.bm_sourceHelper = (function () {
             var storedAssets = assetsStorage.getAssets(compUid);
             if (storedAssets) {
                 copyAssetsToArray(storedAssets, assets);
-                bm_renderManager.imagesReady();
+                bm_renderManager.imagesReady(generation);
                 return;
             }
         }
@@ -708,7 +745,7 @@ $.__bodymovin.bm_sourceHelper = (function () {
         assetsArray = assets;
 
         renderQueueHelper.backupRenderQueue();
-        scheduleNextSaveImage();  
+        scheduleNextSaveImage(generation);
     }
     
     function addFont(fontName, fontFamily, fontStyle, fontLocation) {
@@ -728,14 +765,18 @@ $.__bodymovin.bm_sourceHelper = (function () {
         if (fontLocation && settingsHelper.shouldBundleFonts()) {
             var file = new File(fontLocation)
             if (file.exists) {
-                if (!settingsHelper.shouldInlineFonts()) {
-                    var fontFileName = 'font_' + fontCount++;
-                    var destinationFileData = bm_fileManager.createFile(fontFileName, ['raw','images']);
-                    var destinationFile = destinationFileData.file;
-                    file.copy(destinationFile.fsName);
+                var fontFileName = 'font_' + fontCount++;
+                var shouldInlineFont = settingsHelper.shouldInlineFonts();
+                var fontStagingPath = shouldInlineFont ? ['staging', 'fonts'] : ['raw', 'images'];
+                var destinationFileData = bm_fileManager.createFile(fontFileName, fontStagingPath);
+                var destinationFile = destinationFileData.file;
+                if (file.copy(destinationFile.fsName) === false) {
+                    throw new Error('Could not copy bundled font to the temporary export folder: ' + fontLocation);
+                }
+                if (!shouldInlineFont) {
                     fontData.location = "images/" + fontFileName;
                 }
-                fontData.originalLocation = fontLocation;
+                fontData.originalLocation = destinationFile.fsName;
             }
         }
         fonts.push(fontData);
@@ -745,7 +786,8 @@ $.__bodymovin.bm_sourceHelper = (function () {
         return fonts;
     }
     
-    function reset() {
+    function reset(generation) {
+        currentRenderGeneration = generation;
         compSources.length = 0;
         imageSources.length = 0;
         videoSources.length = 0;
@@ -758,7 +800,7 @@ $.__bodymovin.bm_sourceHelper = (function () {
         sequenceCount = 0;
         sequenceSourcesStillsCount = 0;
         imageNameIndex = 0;
-        audioSourceHelper.reset();
+        audioSourceHelper.reset(generation);
         dataSourceHelper.reset();
     }
     

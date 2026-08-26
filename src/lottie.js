@@ -55,7 +55,6 @@
     return ProxyFunction;
   }
 
-  // import Howl from '../../3rd_party/howler';
   var audioControllerFactory = function () {
     function AudioController(audioFactory) {
       this.audios = [];
@@ -95,12 +94,6 @@
       createAudio: function createAudio(assetPath) {
         if (this.audioFactory) {
           return this.audioFactory(assetPath);
-        }
-
-        if (window.Howl) {
-          return new window.Howl({
-            src: [assetPath]
-          });
         }
 
         return {

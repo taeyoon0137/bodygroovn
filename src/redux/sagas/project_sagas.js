@@ -11,12 +11,9 @@ import {
 	compressAllProjects,
 } from '../../helpers/localStorageHelper'
 import {
-	loadFileData
-} from '../../helpers/FileLoader'
-import {
 	getVersionFromExtension,
-	setLottiePaths,
 	initializeServer,
+	restartServer,
 	saveProjectDataToXMP,
 	getProjectDataFromXMP,
 	setStorageLocation,
@@ -25,10 +22,9 @@ import {
 	setCompressedState,
 } from '../../helpers/CompositionsProvider'
 import {ping as serverPing} from '../../helpers/serverHelper'
+import {saveTextFile} from '../../helpers/FileLoader'
 import storingDataSelector from '../selectors/storing_data_selector'
 import storingPathsSelector from '../selectors/storing_paths_selector'
-import LottieVersions from '../../helpers/LottieVersions'
-import fs from '../../helpers/fs_proxy'
 
 const delay = (ms) => new Promise(res => setTimeout(res, ms))
 
@@ -69,13 +65,10 @@ function *getVersion(action) {
 	}
 }
 
-function saveProjectDataToPath(data) {
-	try {
-		if (data.extraState.shouldKeepCopyOfSettings
-			&& data.extraState.settingsDestinationCopy) {
-				fs.writeFileSync(data.extraState.settingsDestinationCopy.destination, JSON.stringify(data))
-		}
-	} catch (err) {
+async function saveProjectDataToPath(data) {
+	if (data.extraState.shouldKeepCopyOfSettings
+		&& data.extraState.settingsDestinationCopy) {
+		await saveTextFile(JSON.stringify(data), data.extraState.settingsDestinationCopy.destination)
 	}
 }
 
@@ -87,20 +80,8 @@ function *saveStoredData() {
 			actions.SETTINGS_TOGGLE_VALUE, 
 			actions.SETTINGS_TOGGLE_EXTRA_COMP, 
 			actions.SETTINGS_CANCEL,
-			actions.SETTINGS_BANNER_WIDTH_UPDATED,
-			actions.SETTINGS_BANNER_HEIGHT_UPDATED,
-			actions.SETTINGS_BANNER_ORIGIN_UPDATED,
-			actions.SETTINGS_BANNER_VERSION_UPDATED,
-			actions.SETTINGS_BANNER_LIBRARY_PATH_UPDATED,
-			actions.SETTINGS_BANNER_RENDERER_UPDATED,
-			actions.SETTINGS_BANNER_CLICK_TAG_UPDATED,
-			actions.SETTINGS_BANNER_ZIP_FILES_UPDATED,
-			actions.SETTINGS_BANNER_INCLUDE_DATA_IN_TEMPLATE_UPDATED,
-			actions.SETTINGS_BANNER_CUSTOM_SIZE_UPDATED,
 			actions.SETTINGS_APPLY_FROM_CACHE,
 			actions.SETTINGS_MODE_TOGGLE,
-			actions.SETTINGS_BANNER_LOOP_TOGGLE,
-			actions.SETTINGS_BANNER_LOOP_COUNT_CHANGE,
 			actions.SETTINGS_COMP_NAME_AS_DEFAULT_TOGGLE,
 			actions.SETTINGS_AE_AS_PATH_TOGGLE,
 			actions.SETTINGS_PATH_AS_DEFAULT_FOLDER,
@@ -108,7 +89,6 @@ function *saveStoredData() {
 			actions.SETTINGS_DEFAULT_FOLDER_PATH_SELECTED,
 			actions.COMPOSITIONS_FILTER_CHANGE,
 			actions.SETTINGS_TOGGLE_SELECTED,
-			actions.SETTINGS_BANNER_LIBRARY_FILE_SELECTED,
 			actions.REPORTS_SAVED,
 			actions.REPORTS_RENDERERS_UPDATED,
 			actions.REPORTS_MESSAGES_UPDATED,
@@ -134,6 +114,13 @@ function *saveStoredData() {
 		const storingData = yield select(storingDataSelector)
 		try {
 			yield call(saveProjectDataToPath, storingData.data)
+		} catch (error) {
+			yield put({
+				type: actions.WRITE_ERROR,
+				pars: ['Could not write the settings copy.', error && error.message ? error.message : 'The destination is not writable.'],
+			})
+		}
+		try {
 			if (storingData.data.extraState.shouldSaveInProjectFile) {
 				yield call(saveProjectDataToXMP, storingData.data)
 			} else {
@@ -175,17 +162,6 @@ function *savePathsData() {
 	}
 }
 
-function *getLottieFilesSizes() {
-	let i = 0
-	while (i < LottieVersions.length) {
-		const lottieData = LottieVersions[i] 
-		const fileData = yield call(loadFileData, `assets/player/${lottieData.local}` )
-		lottieData.fileSize = Math.round(fileData.size / 100) / 10 + ' Kb'
-		i += 1
-	}
-	setLottiePaths(LottieVersions)
-}
-
 function *pingServer() {
 	while(true) {
 		yield call(delay, 5000)
@@ -194,14 +170,18 @@ function *pingServer() {
 }
 
 function *start() {
+	let shouldRestart = false
 	while(true) {
-		yield call(initializeServer)
 		try {
+			yield call(shouldRestart ? restartServer : initializeServer)
+			shouldRestart = false
 			yield call(pingServer)
 		} catch (err) {
+			shouldRestart = true
 			yield put({ 
 					type: actions.SERVER_PING_FAIL,
 			})
+			yield call(delay, 1000)
 		}
 	}
 }
@@ -222,7 +202,6 @@ export default [
   takeEvery(actions.PROJECT_SET_ID, projectGetStoredData),
   takeEvery([actions.APP_INITIALIZED], getPaths),
   takeEvery([actions.APP_INITIALIZED], getVersion),
-  takeEvery([actions.APP_INITIALIZED], getLottieFilesSizes),
   takeEvery([actions.APP_INITIALIZED], start),
   takeEvery([actions.PROJECT_SET_ID], compressAllSettings),
   takeEvery([actions.APP_CLEAR_CACHE_CONFIRMED], clearCache),

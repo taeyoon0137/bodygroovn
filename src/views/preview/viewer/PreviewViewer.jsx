@@ -2,7 +2,6 @@ import React from 'react'
 import PropTypes from 'prop-types'
 import { StyleSheet, css } from 'aphrodite'
 import Bodymovin from '../../../components/bodymovin/bodymovin'
-import SkottiePreviewer from './SkottiePreviewer'
 import Variables from '../../../helpers/styles/variables'
 
 const styles = StyleSheet.create({
@@ -28,7 +27,6 @@ const styles = StyleSheet.create({
 
 const previewTypes = {
   BROWSER: 'browser',
-  SKOTTIE: 'skottie',
 }
 
 const memoizeAnimation = (() => {
@@ -66,21 +64,8 @@ class PreviewViewer extends React.PureComponent {
       </Bodymovin>
     </div>
 
-  renderSkottie = () =>
-    <div
-      key={previewTypes.SKOTTIE}
-      className={css(styles.rendererWrapper)}
-     >
-      <SkottiePreviewer
-        animationData={memoizeAnimation(this.props.animationData, previewTypes.SKOTTIE)}
-        assetsData={this.props.assetsData}
-        progress={this.props.progress}
-      />
-    </div>
-
   previewRenderers = {
     [previewTypes.BROWSER]: this.renderBrowser,
-    [previewTypes.SKOTTIE]: this.renderSkottie,
   }
 
   componentDidUpdate(prevProps) {
@@ -110,7 +95,6 @@ class PreviewViewer extends React.PureComponent {
   }
 
   renderPreviewers(types) {
-      // return [previewTypes.BROWSER, previewTypes.SKOTTIE].map(type => this.previewRenderers[type]())
       return this.props.previewerTypes.map(type => this.previewRenderers[type]())
   }
 

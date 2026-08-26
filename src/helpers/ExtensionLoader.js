@@ -1,5 +1,5 @@
-import {SystemPath} from './CSInterface'
 import csInterface from './CSInterfaceHelper'
+/* global SystemPath */
 
 var fileName = 'initializer.jsx';
 var promise = new Promise(loadJSX);

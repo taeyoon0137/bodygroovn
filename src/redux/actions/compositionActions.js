@@ -185,97 +185,10 @@ function applySettingsFromCache(comp, allComps) {
 	}
 }
 
-function handleBannerWidthChange(value) {
-	return {
-		type: actionTypes.SETTINGS_BANNER_WIDTH_UPDATED,
-		value,
-	}
-}
-
-function handleBannerHeightChange(value) {
-	return {
-		type: actionTypes.SETTINGS_BANNER_HEIGHT_UPDATED,
-		value,
-	}
-}
-
-function handleBannerVersionChange(value) {
-	return {
-		type: actionTypes.SETTINGS_BANNER_VERSION_UPDATED,
-		value,
-	}
-}
-
-function handleBannerOriginChange(value) {
-	return {
-		type: actionTypes.SETTINGS_BANNER_ORIGIN_UPDATED,
-		value,
-	}
-}
-
-function handleBannerLibraryPathChange(value) {
-	return {
-		type: actionTypes.SETTINGS_BANNER_LIBRARY_PATH_UPDATED,
-		value,
-	}
-}
-
-function handleBannerLibraryFileChange(value) {
-	return {
-		type: actionTypes.SETTINGS_BANNER_LIBRARY_FILE_UPDATE,
-		value,
-	}
-}
-
 function handleModeToggle(value) {
 	return {
 		type: actionTypes.SETTINGS_MODE_TOGGLE,
 		value,
-	}
-}
-
-function lottieBannerRendererUpdated(value) {
-	return {
-		type: actionTypes.SETTINGS_BANNER_RENDERER_UPDATED,
-		value,
-	}
-}
-
-function lottieBannerClickTagUpdated(value) {
-	return {
-		type: actionTypes.SETTINGS_BANNER_CLICK_TAG_UPDATED,
-		value,
-	}
-}
-
-function lottieBannerZipFilesUpdated() {
-	return {
-		type: actionTypes.SETTINGS_BANNER_ZIP_FILES_UPDATED,
-	}
-}
-
-function lottieBannerCustomSizeFlagUpdated() {
-	return {
-		type: actionTypes.SETTINGS_BANNER_CUSTOM_SIZE_UPDATED,
-	}
-}
-
-function lottieIncludeDataInTemplateUpdated() {
-	return {
-		type: actionTypes.SETTINGS_BANNER_INCLUDE_DATA_IN_TEMPLATE_UPDATED,
-	}
-}
-
-function lottieHandleLoopToggleChange() {
-	return {
-		type: actionTypes.SETTINGS_BANNER_LOOP_TOGGLE,
-	}
-}
-
-function lottieHandleLoopCountChange(value) {
-	return {
-		type: actionTypes.SETTINGS_BANNER_LOOP_COUNT_CHANGE,
-		value
 	}
 }
 
@@ -332,13 +245,6 @@ function settingsCopyPathChange(value) {
 function settingsCopyPathPathSelected(value) {
 	return {
 		type: actionTypes.SETTINGS_COPY_PATH_SELECTED,
-		value,
-	}
-}
-
-function settingsBannerLibraryFileSelected(value) {
-	return {
-		type: actionTypes.SETTINGS_BANNER_LIBRARY_FILE_SELECTED,
 		value,
 	}
 }
@@ -459,27 +365,13 @@ export {
 	applySettings,
 	applySettingsFromCache,
 	applySettingsToSelectedComps,
-	handleBannerWidthChange,
-	handleBannerHeightChange,
-	handleBannerVersionChange,
 	handleModeToggle,
-	handleBannerOriginChange,
-	handleBannerLibraryPathChange,
-	handleBannerLibraryFileChange,
-	lottieBannerRendererUpdated,
-	lottieBannerClickTagUpdated,
-	lottieBannerZipFilesUpdated,
-	lottieBannerCustomSizeFlagUpdated,
-	lottieIncludeDataInTemplateUpdated,
-	lottieHandleLoopToggleChange,
-	lottieHandleLoopCountChange,
 	toggleCompNameAsDefault,
 	toggleCompNameAsFolder,
 	toggleAEAsPath,
 	toggleDefaultPathAsFolder,
 	settingsDefaultFolderPathSelected,
 	defaultFolderFileChange,
-	settingsBannerLibraryFileSelected,
 	goToAnnotations,
 	goToReports,
 	handleDemoBackgroundColorChange,

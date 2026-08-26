@@ -113,7 +113,6 @@ class Preview extends React.Component {
   onRendedereSelected = toggledType => {
     const availableTypes = [
       previewTypes.BROWSER,
-      previewTypes.SKOTTIE,
     ]
     let selectedTypes = availableTypes.filter(currentType => {
       if (this.state.previewerTypes.includes(currentType)) {

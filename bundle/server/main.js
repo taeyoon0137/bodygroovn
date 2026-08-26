@@ -1,454 +1,54 @@
-const imagemin = require('imagemin');
-// const imageminJpegtran = require('imagemin-jpegtran');
-// const imageminJpegoptim = require('imagemin-jpegoptim');
-const imageminPngquant = require('imagemin-pngquant');
-const pngToJpeg = require('png-to-jpeg');
-const express = require('express')
-const cors = require('cors')
-var fs = require('fs');
-var nodePath = require('path');
-var bodyParser = require('body-parser');
-var PNG = require('pngjs').PNG;
-var LottieToFlare = require('./lottie_to_flare/test.bundle.js').default
-var animationSegmenter = require('./animationSegmenter')
-const FileType = require('file-type');
+'use strict';
+const crypto = require('crypto');
+const fs = require('fs');
+const http = require('http');
 const os = require('os');
-var ltf = new LottieToFlare();
+const path = require('path');
+const { Worker } = require('worker_threads');
+const animationSegmenter = require('./animationSegmenter');
 
-var JSZip = require('jszip');
-
-let localStoredId = ''
-
-async function processImage(path, compression, hasTransparency) {
-	//C:\\Program Files\\Adobe\\Adobe After Effects 2020\\Support Files
-	// const files = await imagemin(['C:/Users/tropi/AppData/Roaming/Adobe/CEP/extensions/bodymovin/server/images/*.{jpg,png}'], {
-	const destinationPathFolder = path.substr(0, path.lastIndexOf('/') + 1);
-	const destinationFullPath = destinationPathFolder;
-	const plugins = []
-	if (hasTransparency) {
-		plugins.push(imageminPngquant({
-			quality: [0, compression]
-		}))
-	} else {
-		/*plugins.push(imageminJpegoptim({
-			// max: Math.round(compression * 100)
-			max: compression
-		}))*/
-		plugins.push(pngToJpeg({quality: Math.round(compression * 100)}))
-	}
-	const files = await imagemin([path], {
-	// const files = await imagemin(['./images/hernan.jpg'], {
-			destination: destinationFullPath,
-			plugins
-		});
-
-		return files
-		// return files
-		//=> [{data: <Buffer 89 50 4e …>, destinationPath: 'build/images/foo.jpg'}, …]
+const LIMITS = Object.freeze({ envelope: 32768, encodeFile: 134217728, typeRead: 8192, imageFile: 268435456, imagePixels: 67108864, imageDecoded: 1073741824, splitFile: 67108864, splitCount: 1000, pathBytes: 4096, workerQueue: 4, workerTimeout: 60000, requestTimeout: 75000 });
+class HttpError extends Error { constructor(status, code, message) { super(message); this.status = status; this.code = code; } }
+function sendJson(res, status, value) { const body = Buffer.from(JSON.stringify(value)); res.writeHead(status, { 'Access-Control-Allow-Headers': 'Content-Type, X-Bodygroovn-Token', 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS', 'Access-Control-Allow-Origin': '*', 'Content-Length': body.length, 'Content-Type': 'application/json; charset=utf-8' }); res.end(body); }
+const success = (res, data, status = 200) => sendJson(res, status, { ok: true, data });
+const failure = (res, error) => sendJson(res, error instanceof HttpError ? error.status : 500, { ok: false, error: { code: error instanceof HttpError ? error.code : 'INTERNAL_ERROR', message: error instanceof HttpError ? error.message : 'The request could not be completed.' } });
+function parseBody(req) { return new Promise((resolve, reject) => { const chunks = []; let size = 0; let tooLarge = false; req.on('data', (chunk) => { size += chunk.length; if (size > LIMITS.envelope) tooLarge = true; else chunks.push(chunk); }); req.on('end', () => { if (tooLarge) { reject(new HttpError(413, 'REQUEST_TOO_LARGE', 'The request body exceeds 32 KiB.')); return; } let parsed; try { const value = Buffer.concat(chunks).toString('utf8'); parsed = value ? JSON.parse(value) : {}; } catch (_) { reject(new HttpError(400, 'INVALID_JSON', 'The request body must be valid JSON.')); return; } if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed) || Object.getPrototypeOf(parsed) !== Object.prototype) { reject(new HttpError(400, 'INVALID_BODY', 'The request body must be a JSON object.')); return; } resolve(parsed); }); req.on('error', reject); }); }
+function decodePath(value, encoded = true) { if (typeof value !== 'string' || !value) throw new HttpError(400, 'INVALID_PATH', 'A path is required.'); let decoded = value; if (encoded) { try { decoded = decodeURIComponent(value); } catch (_) { throw new HttpError(400, 'INVALID_PATH', 'The path is not valid URI encoding.'); } } if (Buffer.byteLength(decoded, 'utf8') > LIMITS.pathBytes || decoded.includes('\0')) throw new HttpError(400, 'INVALID_PATH', 'The path exceeds the allowed length or contains NUL.'); return path.resolve(decoded); }
+async function existingRealpath(candidate) { try { return await fs.promises.realpath(candidate); } catch (error) { if (error.code !== 'ENOENT') throw error; return path.join(await fs.promises.realpath(path.dirname(candidate)), path.basename(candidate)); } }
+function isInside(candidate, root) { const relative = path.relative(root, candidate); return relative === '' || (relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative)); }
+async function authorizePath(value, roots, mode, encoded = true) { const resolved = await existingRealpath(decodePath(value, encoded)); if (!roots.some((root) => isInside(resolved, root))) throw new HttpError(403, 'PATH_FORBIDDEN', 'The path is outside the registered roots.'); if (mode === 'file' && !(await fs.promises.stat(resolved)).isFile()) throw new HttpError(422, 'NOT_A_FILE', 'The path must identify a file.'); if (mode === 'directory' && !(await fs.promises.stat(resolved)).isDirectory()) throw new HttpError(422, 'NOT_A_DIRECTORY', 'The path must identify a directory.'); return resolved; }
+async function authorizeOutputPath(pathname, roots) { const candidate = decodePath(pathname, false); let stats; try { stats = await fs.promises.lstat(candidate); } catch (error) { if (error.code !== 'ENOENT') throw error; } if (stats && stats.isSymbolicLink()) throw new HttpError(403, 'PATH_FORBIDDEN', 'Split output paths must not be symbolic links.'); if (stats && !stats.isFile()) throw new HttpError(422, 'NOT_A_FILE', 'Split output paths must identify files.'); const resolved = await existingRealpath(candidate); if (!roots.some((root) => isInside(resolved, root))) throw new HttpError(403, 'PATH_FORBIDDEN', 'The path is outside the registered roots.'); return candidate; }
+async function stageJsonFile(pathname, value) { const temporary = path.join(path.dirname(pathname), `.${path.basename(pathname)}.${process.pid}.${crypto.randomBytes(8).toString('hex')}.tmp`); let handle; try { handle = await fs.promises.open(temporary, 'wx', 0o600); await handle.writeFile(JSON.stringify(value), 'utf8'); await handle.sync(); await handle.close(); handle = null; return { pathname, temporary }; } catch (error) { if (handle) await handle.close().catch(() => {}); await fs.promises.unlink(temporary).catch(() => {}); throw error; } }
+async function writeJsonFilesAtomically(entries, roots) { const authorized = []; for (const entry of entries) authorized.push({ pathname: await authorizeOutputPath(entry.pathname, roots), value: entry.value }); const staged = []; try { for (const entry of authorized) staged.push(await stageJsonFile(entry.pathname, entry.value)); for (const entry of staged) await fs.promises.rename(entry.temporary, entry.pathname); } finally { await Promise.all(staged.map((entry) => fs.promises.unlink(entry.temporary).catch(() => {}))); } }
+async function limitedFile(pathname, limit) { const stats = await fs.promises.stat(pathname); if (stats.size > limit) throw new HttpError(413, 'FILE_TOO_LARGE', 'The file exceeds the route limit.'); return stats; }
+function validSplitName(value) { return typeof value === 'string' && value.length > 0 && value !== '.' && value !== '..' && Buffer.byteLength(value, 'utf8') <= 255 && !/[\x00-\x1f\x7f-\x9f<>:"/\\|?*]/.test(value); }
+class ImageWorkerQueue {
+  constructor(workerPath, timeout = LIMITS.workerTimeout) { this.workerPath = workerPath; this.timeout = timeout; this.active = false; this.current = null; this.queue = []; }
+  run(payload) { if (this.queue.length >= LIMITS.workerQueue) return Promise.reject(new HttpError(429, 'WORKER_QUEUE_FULL', 'The image worker queue is full.')); return new Promise((resolve, reject) => { this.queue.push({ payload, resolve, reject }); this.drain(); }); }
+  drain() { if (this.active || !this.queue.length) return; this.active = true; const job = this.queue.shift(); const worker = new Worker(this.workerPath, { workerData: job.payload }); let settled = false; this.current = { job, worker }; const finish = (callback, value) => { if (settled) return; settled = true; clearTimeout(timer); worker.terminate(); this.active = false; this.current = null; callback(value); this.drain(); }; const timer = setTimeout(() => finish(job.reject, new HttpError(504, 'WORKER_TIMEOUT', 'Image processing timed out.')), this.timeout); worker.once('message', (message) => message && message.ok ? finish(job.resolve, message.data) : finish(job.reject, new HttpError(message.status || 422, message.code || 'IMAGE_REJECTED', message.message || 'The PNG could not be processed.'))); worker.once('error', (error) => finish(job.reject, error)); worker.once('exit', (code) => { if (code !== 0) finish(job.reject, new Error(`Image worker exited with code ${code}.`)); }); }
+  close() { if (this.current) { this.current.worker.terminate(); this.current.job.reject(new Error('Server closed.')); this.current = null; this.active = false; } this.queue.splice(0).forEach((job) => job.reject(new Error('Server closed.'))); }
 }
+async function getFileType(buffer) { const module = require('file-type'); return (module.fromBuffer || module.fileTypeFromBuffer)(buffer); }
+async function detectPathType(pathname, detectFileType) { const handle = await fs.promises.open(pathname, 'r'); try { const buffer = Buffer.alloc(LIMITS.typeRead); const result = await handle.read(buffer, 0, buffer.length, 0); return await detectFileType(buffer.subarray(0, result.bytesRead)) || null; } finally { await handle.close(); } }
+function tokenMatches(actual, expected) { return typeof actual === 'string' && /^[0-9a-f]{64}$/.test(actual) && crypto.timingSafeEqual(Buffer.from(actual), Buffer.from(expected)); }
 
-const app = express.createServer();
-app.use(cors());
-app.use(bodyParser.json())
-app.use(express.static('public'))
-app.use(function (req, res, next) {
-	if (!req.headers || !req.headers['bodymovin-id']) {
-		res.status(403).send('Client unauthorized');
-	} else {
-		// TODO: improve this
-		next();
-		// const bodymovinId = req.headers['bodymovin-id'];
-		// // Because of race conditions if values don't match it will try one more time to get it from the local file system
-		// if (bodymovinId !== localStoredId) {
-		// 	localStoredId = fs.readFileSync(os.tmpdir() + nodePath.sep + 'bodymovin_uid.txt', "utf8");
-		// }
-		// // if values still don't match, reject the request
-		// if (bodymovinId !== localStoredId) {
-		// 	res.status(403).send('Client unauthorized');
-		// } else {
-		// 	next();
-		// }
-	}
-  })
-const port = 24801
-
-app.get('/', (req, res) => {
-
-	res.send('Root 1')
-	// res.send(nodePath.join(__dirname, 'public') + nodePath.sep + 'canvaskit.wasm')
-})
-
-app.get('/canvaskit.wasm', (req, res) => {
-	const filePath = nodePath.join(__dirname, 'public') + nodePath.sep + 'canvaskit.wasm'
-	const buffer = fs.readFileSync(filePath)
-	if (buffer) {
-		res.setHeader('Content-Type', 'application/wasm');
-		res.send(buffer);
-	} else {
-		res.send('NOT FOUND')
-	}
-})
-
-app.get('/canvaskit.js', (req, res) => {
-	const filePath = nodePath.join(__dirname, 'public') + nodePath.sep + 'canvaskit.js'
-	const buffer = fs.readFileSync(filePath)
-	if (buffer) {
-		res.setHeader('Content-Type', 'text/javascript; charset=UTF-8');
-		res.send(buffer);
-	} else {
-		res.send('NOT FOUND')
-	}
-})
-
-app.get('/fileFromPath', (req, res) => {
-	const filePath = decodeURIComponent(req.query.path)
-	const buffer = fs.readFileSync(filePath)
-	if (buffer) {
-		res.setHeader('Content-Type', decodeURIComponent(req.query.type));
-		res.send(buffer);
-	} else {
-		res.send('NOT FOUND')
-	}
-	res.send(JSON.stringify(req.query))
-})
-
-function checkImageTransparency(imagePath) {
-	return new Promise((resolve, reject) => {
-		try {
-			const stream = fs.createReadStream(imagePath)
-			stream.on('error', function(error) {
-				reject(error)
-			})
-			const pngStream = stream.pipe(new PNG())
-
-			pngStream.on('metadata', function(meta) {
-				// console.log('meta.alpha', meta.alpha)
-				// resolve(meta.alpha + 'testtt')
-			})
-
-			pngStream.on('parsed', function() {
-				var hasTransparency = false
-				for (var y = 0; y < this.height; y++) {
-					for (var x = 0; x < this.width; x++) {
-						var idx = (this.width * y + x) << 2;
-						if (this.data[idx+3] !== 255) {
-							hasTransparency = true
-							x = this.width
-							y = this.height
-						}
-					}
-				}
-				resolve(hasTransparency)
-			})
-
-		} catch(err)
-		{
-			reject(err)
-		}
-	})
+function createServer(options = {}) {
+  let token = crypto.randomBytes(32).toString('hex'); let tempRoot; let exportDestination = null;
+  const detectFileType = options.fileTypeDetector || getFileType;
+  const requestTimeout = options.requestTimeout || LIMITS.requestTimeout;
+  const imageQueue = new ImageWorkerQueue(options.workerPath || path.join(__dirname, 'pngWorker.js'), options.workerTimeout);
+  async function resolveDirectory(rootPath) { const real = await fs.promises.realpath(decodePath(rootPath, false)); if (!(await fs.promises.stat(real)).isDirectory()) throw new HttpError(422, 'NOT_A_DIRECTORY', 'The path must be a directory.'); return real; }
+  async function setExportDestination(destinationPath) { const candidate = decodePath(destinationPath, false); let directory = candidate; try { if (!(await fs.promises.stat(candidate)).isDirectory()) directory = path.dirname(candidate); } catch (error) { if (error.code !== 'ENOENT') throw error; directory = path.dirname(candidate); } exportDestination = await resolveDirectory(directory); return exportDestination; }
+  const readyRoots = resolveDirectory(options.tempRoot || os.tmpdir()).then((real) => { tempRoot = real; });
+  const routes = {
+    'GET /ping': async (_, res) => success(res, { pong: true }),
+    'POST /encode': async (_, res, body) => { const pathname = await authorizePath(body.path, [tempRoot, exportDestination].filter(Boolean), 'file'); await limitedFile(pathname, LIMITS.encodeFile); success(res, { base64: (await fs.promises.readFile(pathname)).toString('base64') }); },
+    'POST /getType': async (_, res, body) => { const pathname = await authorizePath(body.path, [tempRoot, exportDestination].filter(Boolean), 'file'); success(res, { fileType: await detectPathType(pathname, detectFileType) }); },
+    'POST /processImage': async (_, res, body) => { const pathname = await authorizePath(body.path, [tempRoot, exportDestination].filter(Boolean), 'file'); await limitedFile(pathname, LIMITS.imageFile); const paletteColors = body.paletteColors; if (typeof paletteColors !== 'number' || ![0, 32, 64, 128, 256].includes(paletteColors)) throw new HttpError(400, 'INVALID_PALETTE', 'paletteColors must be 0, 32, 64, 128, or 256.'); if (!paletteColors) { const fileType = await detectPathType(pathname, detectFileType); if (!fileType || fileType.ext !== 'png') throw new HttpError(415, 'INVALID_PNG', 'The file is not a supported PNG.'); return success(res, { changed: false, path: pathname, extension: 'png', warnings: [] }); } success(res, await imageQueue.run({ pathname, paletteColors, limits: LIMITS })); },
+    'POST /splitAnimation': async (_, res, body) => { const roots = [tempRoot, exportDestination].filter(Boolean); const origin = await authorizePath(body.origin, roots, 'directory'); const destination = await authorizePath(body.destination, roots, 'directory'); let fileName; if (typeof body.fileName !== 'string') throw new HttpError(400, 'INVALID_FILE_NAME', 'The split file name is invalid.'); try { fileName = decodeURIComponent(body.fileName); } catch (_) { throw new HttpError(400, 'INVALID_FILE_NAME', 'The split file name is invalid.'); } if (!validSplitName(fileName)) throw new HttpError(400, 'INVALID_FILE_NAME', 'The split file name is not allowed.'); const time = body.time; if (typeof time !== 'number' || !Number.isFinite(time) || time <= 0) throw new HttpError(400, 'INVALID_TIME', 'time must be greater than zero.'); const source = await authorizePath(path.join(origin, `${fileName}.json`), roots, 'file', false); await limitedFile(source, LIMITS.splitFile); let json; try { json = JSON.parse(await fs.promises.readFile(source, 'utf8')); } catch (_) { throw new HttpError(422, 'INVALID_ANIMATION', 'The source animation is not valid JSON.'); } try { animationSegmenter.createSegmentationPlan(json, time, LIMITS.splitCount); } catch (error) { if (error.code === 'TOO_MANY_SEGMENTS') throw new HttpError(413, 'TOO_MANY_SEGMENTS', 'The animation exceeds 1000 segments.'); throw new HttpError(422, 'INVALID_ANIMATION', 'The source animation timing is invalid.'); } let pieces; try { pieces = animationSegmenter(json, time, LIMITS.splitCount); } catch (error) { if (error.code === 'TOO_MANY_SEGMENTS') throw new HttpError(413, 'TOO_MANY_SEGMENTS', 'The animation exceeds 1000 segments.'); throw error; } const outputs = [{ pathname: path.join(destination, `${fileName}.json`), value: pieces.main }].concat(pieces.segments.map((segment, index) => ({ pathname: path.join(destination, `${fileName}_${index}.json`), value: segment }))); await writeJsonFilesAtomically(outputs, roots); success(res, { totalSegments: pieces.segments.length }); },
+  };
+  const server = http.createServer(async (req, res) => { try { req.setTimeout(requestTimeout, () => { if (!res.headersSent) { res.once('finish', () => req.destroy()); failure(res, new HttpError(408, 'REQUEST_TIMEOUT', 'The request timed out.')); } }); await readyRoots; if (req.method === 'OPTIONS') { res.writeHead(204, { 'Access-Control-Allow-Headers': 'Content-Type, X-Bodygroovn-Token', 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS', 'Access-Control-Allow-Origin': '*' }); res.end(); return; } if (!tokenMatches(req.headers['x-bodygroovn-token'], token)) throw new HttpError(401, 'UNAUTHORIZED', 'A valid local server token is required.'); const pathname = new URL(req.url, 'http://127.0.0.1').pathname.replace(/\/$/, '') || '/'; const route = routes[`${req.method} ${pathname}`]; if (!route) { const known = Object.keys(routes).some((key) => key.endsWith(` ${pathname}`)); throw new HttpError(known ? 405 : 404, known ? 'METHOD_NOT_ALLOWED' : 'NOT_FOUND', known ? 'The HTTP method is not allowed.' : 'The route does not exist.'); } if (req.method === 'POST' && !/^application\/json(?:;|$)/i.test(req.headers['content-type'] || '')) throw new HttpError(415, 'UNSUPPORTED_MEDIA_TYPE', 'POST requests must use application/json.'); await route(req, res, req.method === 'POST' ? await parseBody(req) : {}); } catch (error) { if (!res.headersSent && !res.destroyed) failure(res, error); } });
+  server.requestTimeout = requestTimeout; server.keepAliveTimeout = 5000; server.headersTimeout = 10000;
+  return new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', () => resolve({ close: () => new Promise((done) => { imageQueue.close(); server.close(done); }), getConnection: () => ({ port: server.address().port, token }), setExportDestination, rotateToken: () => { token = crypto.randomBytes(32).toString('hex'); return token; }, server })); });
 }
-
-app.post('/encode', async function(req, res){
-	if (req.body.path) {
-		try {
-			const fs = require('fs');
-			const decodedPath = decodeURIComponent(req.body.path)
-
-			const buff = fs.readFileSync(decodedPath);
-			const base64data = buff.toString('base64');
-			res.send({
-				status: 'success',
-				data: base64data,
-			})
-		} catch(err) {
-			res.send({
-			status: 'error',
-			message: 'failed decoding',
-			error: err,
-			errorMessage: err.message,
-		})
-		}
-	} else {
-		res.send({
-			status: 'error',
-			message: 'missing params',
-		})
-	}
-})
-
-app.post('/getType', async function(req, res){
-	if (req.body.path) {
-		try {
-			const fileType = await FileType.fromFile(decodeURIComponent(req.body.path))
-			res.send({
-				status: 'success',
-				fileType: fileType,
-			})
-		} catch(err) {
-			res.send({
-			status: 'error',
-			message: 'failed getting type',
-			error: err,
-			errorMessage: err.message,
-		})
-		}
-	} else {
-		res.send({
-			status: 'error',
-			message: 'missing params',
-		})
-	}
-})
-
-app.post('/processImage/', async function(req, res){
-	if (req.body.path && req.body.compression) {
-		try {
-			const decodedPath = decodeURIComponent(req.body.path)
-			const hasTransparency = await checkImageTransparency(decodedPath)
-			const processedImages  = await processImage(decodedPath, req.body.compression, hasTransparency)
-			if (!hasTransparency) {
-				var renamedPath = decodedPath.substr(0, decodedPath.lastIndexOf('.png')) + '.jpg'
-				fs.renameSync(decodedPath, renamedPath)
-			}
-			if (processedImages.length) {
-				res.send({
-					status: 'success',
-					path: processedImages[0].destinationPath,
-					extension: hasTransparency ? 'png' : 'jpg',
-				})
-			} else {
-				res.send({
-					status: 'error',
-					message: 'Could not export',
-				})
-			}
-		} catch(error) {
-			res.send({
-				status: 'error',
-				err: error,
-				message: error.message,
-			});
-		}
-	} else {
-		res.send({
-			status: 'error',
-			message: 'missing params',
-		});
-	}
-});
-
-app.post('/createBanner/', async function(req, res){
-	if (req.body.origin && req.body.destination) {
-		try {
-
-			const zip = JSZip();
-
-			const traverseDirToZip = async(absolutePath, relativePath = '') => {
-				const dirItems = await readdir(absolutePath + relativePath);
-				await Promise.all(dirItems.map(async item => {
-					const fileRelativePath = relativePath + nodePath.sep + item;
-					if (fs.lstatSync(absolutePath + fileRelativePath).isDirectory()) {
-						await traverseDirToZip(absolutePath, fileRelativePath)
-					} else {
-						const fileData = await getFile(absolutePath + fileRelativePath)
-						zip.file(fileRelativePath.substr(1), fileData);
-					}
-				}))
-				return 'ENDED'
-			}
-
-			const originFolder = decodeURIComponent(req.body.origin);
-			const destinationFolderFile = decodeURIComponent(req.body.destination);
-
-
-			await traverseDirToZip(originFolder);
-
-			const zipBlob = await zip.generateAsync({type: 'nodebuffer', compression: "DEFLATE"})
-
-			fs.writeFile(destinationFolderFile, zipBlob, 'binary', (error, success) => {
-				res.send({
-					status: 'success',
-				});
-			});
-		} catch(error) {
-			res.send({
-				status: 'error',
-				error: error,
-				message: error ? error.message || 'No message but error' : 'No Error',
-			});
-		}
-	} else {
-		res.send({
-			status: 'error',
-			message: 'missing params',
-		});
-	}
-});
-
-app.post('/convertToFlare/', async function(req, res){
-	if (req.body.origin && req.body.destination && req.body.fileName) {
-		try {
-			// const originPath = "C:\\Users\\tropi\\AppData\\Local\\Temp\\Bodymovin\\gwir6aia7c\\rive";
-			// const destinationPath = "C:\\Users\\tropi\\AppData\\Local\\Temp\\Bodymovin\\gwir6aia7c\\riveExport";
-			// var destinationName = 'flare.flr2d';
-			const originPath = decodeURIComponent(req.body.origin);
-			const destinationPath = decodeURIComponent(req.body.destination);
-			var destinationName = decodeURIComponent(req.body.fileName);
-
-			const zip = JSZip();
-
-			const dirItems = await readdir(originPath);
-			const jsonFilePath = await getJsonPath(dirItems, originPath);
-
-			const jsonDataString = await getJsonData(jsonFilePath)
-			const result = await ltf.convert(jsonDataString);
-			zip.file(destinationName, JSON.stringify(result));
-
-			// Adding assets
-			const jsonData = JSON.parse(jsonDataString)
-			const lottieAssets = jsonData.assets
-				.filter(asset => !!asset.p)
-
-			const assetsData = await Promise.all(lottieAssets.map(asset => {
-				return getFile(originPath + nodePath.sep + asset.u + asset.p)
-			}))
-			lottieAssets.forEach((asset, index) => {
-				zip.file(asset.id, assetsData[index]);
-			})
-
-			const zipBlob = await zip.generateAsync({type: 'nodebuffer'})
-
-			fs.writeFile(destinationPath + nodePath.sep + destinationName, zipBlob, 'binary', (error, success) => {
-				console.log(error, success)
-			});
-			
-
-			res.send({
-				status: 'success',
-			});
-		} catch(error) {
-			res.send({
-				status: 'error',
-				error: error,
-				message: error ? error.message || 'No message but error' : 'No Error',
-			});
-		}
-	} else {
-		res.send({
-			status: 'error',
-			message: 'missing params',
-		});
-	}
-});
-
-app.post('/splitAnimation/', async function(req, res){
-	if (req.body.origin && req.body.destination && req.body.fileName && req.body.time) {
-		try {
-			const origin = decodeURIComponent(req.body.origin);
-			const destination = decodeURIComponent(req.body.destination);
-			const fileName = decodeURIComponent(req.body.fileName);
-			const time = req.body.time;
-
-			const jsonData = await getJsonData(origin + nodePath.sep + fileName + '.json')
-			const jsonObject = JSON.parse(jsonData);
-			const animationPieces = await animationSegmenter(jsonObject, time)
-
-			await writeFile(destination + nodePath.sep + fileName + '.json', JSON.stringify(animationPieces.main))
-			await Promise.all(animationPieces.segments.map((segment, index) => {
-				return writeFile(destination + nodePath.sep + fileName  + '_' + index + '.json', JSON.stringify(segment))
-			}))
-
-
-			res.send({
-				status: 'success',
-				totalSegments: animationPieces.segments.length
-			});
-		} catch(error) {
-			res.send({
-				status: 'error',
-				error: error,
-				message: error ? error.message || 'No message but error' : 'No Error',
-			});
-		}
-	} else {
-		res.send({
-			status: 'error',
-			message: 'missing params',
-		});
-	}
-});
-
-app.get('/ping', function(req, res){
-	res.send('pong')
-})
-
-
-// Helpers
-
-function readdir(path) {
-	return new Promise((resolve, reject) => {
-		fs.readdir(path, function(err, items) {
-			if (!err && items) {
-				resolve(items)
-			} else {
-				reject('No Items')
-			}
-		});
-	})
-}
-
-function getJsonPath(items, originPath) {
-	return new Promise((resolve, reject) => {
-		let jsonFilePath = '';
-		for (var i=0; i<items.length; i++) {
-			if (items[i].indexOf('.json') !== -1) {
-				jsonFilePath = originPath + nodePath.sep + items[i];
-				break;
-			}
-		}
-		if (jsonFilePath) {
-			resolve(jsonFilePath)
-		} else {
-			reject('No json Path');
-		}
-	})
-}
-
-function getJsonData(path) {
-	return new Promise((resolve, reject) => {
-		const jsonData = fs.readFileSync(path, "utf8");
-		if (jsonData) {
-			resolve(jsonData)
-		} else {
-			reject('Failed getting Json')
-		}
-	})
-}
-
-function getFile(path, encoding = '') {
-	return new Promise((resolve, reject) => {
-		const fileData = fs.readFileSync(path, encoding);
-		if (fileData) {
-			resolve(fileData)
-		} else {
-			reject('Failed getting File: ' + path)
-		}
-	})
-}
-
-function writeFile(path, content, encoding = 'utf8') {
-	return new Promise((resolve, reject) => {
-		fs.writeFile(path, content, 'utf8', (error, success) => {
-			if (error) {
-				reject(error)
-			} else {
-				resolve(success)
-			}
-		});
-	})
-}
-
-////  TESTING ULRS
-
-////  END TESTING ULRS
-app.listen(port, '127.0.0.1');
+module.exports = { HttpError, LIMITS, createServer, validSplitName };

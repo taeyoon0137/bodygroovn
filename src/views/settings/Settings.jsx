@@ -148,7 +148,6 @@ class Settings extends React.PureComponent {
     this.toggleHiddens = this.toggleValue.bind(this,'hiddens')
     this.toggleOriginalNames = this.toggleValue.bind(this,'original_names')
     this.toggleOriginalAssets = this.toggleValue.bind(this,'original_assets')
-    this.toggleCompressImages = this.toggleValue.bind(this,'should_compress')
     this.toggleEncodeImages = this.toggleValue.bind(this,'should_encode_images')
     this.toggleSkipImages = this.toggleValue.bind(this,'should_skip_images')
     this.toggleReuseImages = this.toggleValue.bind(this,'should_reuse_images')
@@ -163,7 +162,8 @@ class Settings extends React.PureComponent {
     this.toggleAudioLayers = this.toggleValue.bind(this,'audio:isEnabled')
     this.toggleRasterizeWaveform = this.toggleValue.bind(this,'audio:shouldRaterizeWaveform')
     this.toggleExtraComps = this.toggleValue.bind(this,'extraComps')
-    this.qualityChange = this.qualityChange.bind(this)
+    this.paletteColorsChange = this.paletteColorsChange.bind(this)
+    this.togglePngCompression = this.togglePngCompression.bind(this)
     this.sampleSizeChange = this.sampleSizeChange.bind(this)
     this.toggleBakeExpressionProperties = this.toggleValue.bind(this,'expressions:shouldBake')
     this.toggleCacheExpressionProperties = this.toggleValue.bind(this,'expressions:shouldCacheExport')
@@ -184,9 +184,9 @@ class Settings extends React.PureComponent {
     }
 	}
 
-  componentWillReceiveProps(props) {
-    if(!this.storedSettings && props.settings) {
-      this.storedSettings = props.settings
+  componentDidUpdate() {
+    if(!this.storedSettings && this.props.settings) {
+      this.storedSettings = this.props.settings
     }
   }
 
@@ -204,15 +204,16 @@ class Settings extends React.PureComponent {
     this.props.toggleSettingsValue(name)
   }
 
-  qualityChange(ev) {
-    let segments = parseInt(ev.target.value, 10)
-    if(ev.target.value === '') {
-      this.props.updateSettingsValue('compression_rate', 0)
+  paletteColorsChange(ev) {
+    const paletteColors = parseInt(ev.target.value, 10)
+    if ([0, 32, 64, 128, 256].includes(paletteColors)) {
+      this.props.updateSettingsValue('png_palette_colors', paletteColors)
     }
-    if(isNaN(segments) || segments < 0) {
-      return
-    }
-    this.props.updateSettingsValue('compression_rate', segments)
+  }
+
+  togglePngCompression() {
+    const paletteColors = this.props.settings.png_palette_colors === 0 ? 256 : 0
+    this.props.updateSettingsValue('png_palette_colors', paletteColors)
   }
 
   sampleSizeChange(ev) {
@@ -277,7 +278,7 @@ class Settings extends React.PureComponent {
             {!this.props.settings.glyphs && 
               <SettingsListItem 
                 title='Bundle Fonts'
-                description='if fonts are reachable on the file system. They will get exported with the bundle. (Works with Skottie player only)'
+                description='Exports reachable font files alongside the animation bundle.'
                 toggleItem={this.toggleBundleFonts}
                 active={this.props.settings ? this.props.settings.bundleFonts : false} 
               />
@@ -317,8 +318,8 @@ class Settings extends React.PureComponent {
               toggleOriginalNames={this.toggleOriginalNames}
               toggleSourceNames={this.toggleSourceNames}
               toggleOriginalAssets={this.toggleOriginalAssets}
-              toggleCompressImages={this.toggleCompressImages}
-              qualityChange={this.qualityChange}
+              togglePngCompression={this.togglePngCompression}
+              paletteColorsChange={this.paletteColorsChange}
               toggleEncodeImages={this.toggleEncodeImages}
               toggleSkipImages={this.toggleSkipImages}
               toggleReuseImages={this.toggleReuseImages}
@@ -447,7 +448,7 @@ class Settings extends React.PureComponent {
                 active={this.props.settings ? this.props.settings.audio.isEnabled : false}  />
               <SettingsListItem 
                 title='Rasterize Waveforms'
-                description='It rasterizes waveform instead of exporting keyframes (unchecked option only works in Skottie)'
+                description='Rasterizes waveforms instead of exporting keyframes.'
                 toggleItem={this.toggleRasterizeWaveform}
                 active={this.props.settings ? this.props.settings.audio.shouldRaterizeWaveform : false}  />
               <SettingsListDropdown 

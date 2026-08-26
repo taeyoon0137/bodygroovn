@@ -10,9 +10,19 @@ $.__bodymovin.bm_demoExporter = (function () {
 	var ob = {}
 	var _callback;
 
+	function finish(status) {
+		if (_callback) {
+			var callback = _callback;
+			_callback = null;
+			callback(exporterHelpers.exportTypes.DEMO, status);
+		}
+	}
+
 	function save(destinationPath, config, callback, data) {
 
 		_callback = callback;
+		var transaction = exporterHelpers.createTransaction();
+		try {
 
 		if (config.export_modes.demo) {
 
@@ -20,7 +30,7 @@ $.__bodymovin.bm_demoExporter = (function () {
 
 			var rawFiles = bm_fileManager.getFilesOnPath(['raw']);
 
-			exporterHelpers.saveAssets(rawFiles, destinationData.folder)
+			exporterHelpers.saveAssets(rawFiles, destinationData.folder, transaction)
 
 	        // var fullFilePathName = destinationPath.substr(destinationPath.lastIndexOf('/') + 1);
 
@@ -39,17 +49,20 @@ $.__bodymovin.bm_demoExporter = (function () {
 
 			var demoDestinationFile = new File(destinationData.folder.fsName);
 			demoDestinationFile.changePath(destinationData.fileName + '.html');
-			demoDestinationFile.open('w', 'TEXT', '????');
-			demoDestinationFile.encoding = 'UTF-8';
-			try {
-			    demoDestinationFile.write(demoStr); //DO NOT ERASE, JSON UNFORMATTED
-			    demoDestinationFile.close();
-			    _callback(exporterHelpers.exportTypes.DEMO, exporterHelpers.exportStatuses.SUCCESS);
-			} catch (errr) {
-			    _callback(exporterHelpers.exportTypes.DEMO, exporterHelpers.exportStatuses.FAILED);
-			}
+			exporterHelpers.writeTextFile(demoDestinationFile, demoStr, transaction); //DO NOT ERASE, JSON UNFORMATTED
+			exporterHelpers.commitTransaction(transaction);
+			finish(exporterHelpers.exportStatuses.SUCCESS);
 		} else {
-			_callback(exporterHelpers.exportTypes.DEMO, exporterHelpers.exportStatuses.SUCCESS);
+			finish(exporterHelpers.exportStatuses.SUCCESS);
+		}
+		} catch (error) {
+			try {
+				exporterHelpers.rollbackTransaction(transaction);
+			} catch (rollbackError) {
+				// Preserve failed completion even if Adobe cannot restore a destination.
+			} finally {
+				finish(exporterHelpers.exportStatuses.FAILED);
+			}
 		}
 	}
 
