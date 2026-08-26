@@ -1,0 +1,42 @@
+name: Release bootstrap CI
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .gitattributes
+      - .github/workflows/**
+      - mise.toml
+      - mise.lock
+      - release/payload-inventory.txt
+      - release/trusted-release-automation.txt
+      - scripts/ci/check-toolchain.mjs
+      - scripts/ci/toolchain.mjs
+      - scripts/release/**
+      - scripts/verify-sha256-sidecar.mjs
+      - scripts/write-sha256-sidecar.mjs
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-bootstrap-ci-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          version: 2026.8.14
+          install: true
+          cache: false
+          github_token: ${{ github.token }}
+      - name: Verify the exact mise toolchain
+        run: node scripts/ci/check-toolchain.mjs
+      - name: Test the trusted release automation contract
+        run: node --test scripts/release/bootstrap-contract.test.mjs
+      - name: Check release shell syntax
+        run: bash -n scripts/release/*.sh

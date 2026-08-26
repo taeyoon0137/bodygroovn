@@ -1,8 +1,16 @@
-name: Build v6.0.0 release candidate
+name: Build v6.0.0 pull request candidate
 
 on:
-  push:
-    branches: [main]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: Open same-repository develop-to-main pull request number
+        required: true
+        type: string
+      pr_head_sha:
+        description: Exact 40-character pull request head SHA
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -13,87 +21,92 @@ concurrency:
 
 jobs:
   inspect:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      base_sha: ${{ steps.source.outputs.base_sha }}
+      head_sha: ${{ steps.source.outputs.head_sha }}
+      pull_request_number: ${{ steps.source.outputs.pull_request_number }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          version: 2026.8.14
+          install: true
+          cache: false
+          github_token: ${{ github.token }}
+      - name: Verify the exact mise toolchain
+        run: node scripts/ci/check-toolchain.mjs
+      - id: source
+        name: Authenticate the requested pull request source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+          PR_HEAD_SHA: ${{ inputs.pr_head_sha }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" > "$RUNNER_TEMP/pull-request.json"
+          node scripts/release/verify-pr-source.mjs \
+            "$RUNNER_TEMP/pull-request.json" \
+            "$GITHUB_REPOSITORY" \
+            "$PR_NUMBER" \
+            "$PR_HEAD_SHA" \
+            "$GITHUB_OUTPUT"
+          base_sha=$(grep '^base_sha=' "$GITHUB_OUTPUT" | cut -d= -f2)
+          test "$GITHUB_SHA" = "$base_sha"
+          test "$(git ls-remote origin refs/heads/main | cut -f1)" = "$base_sha"
+
+  build-release-tree:
+    needs: inspect
     runs-on: ubuntu-latest
     outputs:
-      mode: ${{ steps.release.outputs.mode }}
+      unsigned_artifact_name: ${{ steps.identity.outputs.unsigned_artifact_name }}
+      unsigned_artifact_digest: ${{ steps.upload.outputs.artifact-digest }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Checkout the trusted workflow tree
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Checkout the exact pull request head without credentials
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ needs.inspect.outputs.head_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+          path: source
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
           version: 2026.8.14
           install: true
-          cache: true
+          cache: false
           github_token: ${{ github.token }}
-      - name: Verify the exact mise toolchain
+      - name: Verify the trusted toolchain
         run: node scripts/ci/check-toolchain.mjs
-      - run: node scripts/ci/run-yarn.mjs install --immutable
-      - id: release
-        name: Classify pending Changesets
+      - name: Verify the pull request uses the exact active toolchain
+        working-directory: source
+        run: node ../scripts/ci/check-toolchain.mjs
+      - name: Install the pull request dependencies immutably
+        working-directory: source
+        run: node scripts/ci/run-yarn.mjs install --immutable
+      - name: Require the single approved pending release
+        working-directory: source
         run: |
           node scripts/ci/run-yarn.mjs changeset status --output "$RUNNER_TEMP/changeset-status.json"
-          node scripts/release/classify-changeset-release.mjs "$RUNNER_TEMP/changeset-status.json" "$GITHUB_OUTPUT"
-
-  verify-only:
-    needs: inspect
-    if: needs.inspect.outputs.mode == 'none'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
-        with:
-          version: 2026.8.14
-          install: true
-          cache: true
-          github_token: ${{ github.token }}
-      - name: Verify the exact mise toolchain
-        run: node scripts/ci/check-toolchain.mjs
-      - run: node scripts/ci/run-yarn.mjs install --immutable
-      - name: Verify without creating a release
-        run: |
-          node scripts/check-provenance.mjs
-          node scripts/check-generated.mjs
-          node scripts/ci/run-yarn.mjs version:check
-          node scripts/ci/run-yarn.mjs lint
-          node scripts/ci/run-yarn.mjs typecheck
-          node scripts/ci/run-yarn.mjs test
-          node scripts/ci/run-yarn.mjs test:server
-          node scripts/ci/run-yarn.mjs build
-          node scripts/check-payload.mjs build/bodygroovn
-          node scripts/ci/run-yarn.mjs check:removed
-          git diff --exit-code
-
-  candidate:
-    needs: inspect
-    if: needs.inspect.outputs.mode == 'release'
-    runs-on: windows-latest
-    environment: release-signing
-    defaults:
-      run:
-        shell: pwsh
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-        with:
-          fetch-depth: 0
-      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
-        with:
-          version: 2026.8.14
-          install: true
-          cache: true
-          github_token: ${{ github.token }}
-      - name: Verify the exact mise toolchain
-        run: node scripts/ci/check-toolchain.mjs
-      - run: node scripts/ci/run-yarn.mjs install --immutable
-      - name: Require a clean main checkout
-        run: |
-          if (git status --porcelain) { throw "Candidate checkout is not clean" }
-      - name: Require the single approved pending release
-        run: |
-          $status = Join-Path $env:RUNNER_TEMP changeset-status.json
-          node scripts/ci/run-yarn.mjs changeset status --output $status
-          node scripts/release/assert-changeset-release.mjs $status
+          node scripts/release/assert-changeset-release.mjs "$RUNNER_TEMP/changeset-status.json"
       - name: Create the isolated release commit
+        working-directory: source
+        env:
+          PR_HEAD_SHA: ${{ needs.inspect.outputs.head_sha }}
         run: |
-          $triggerSha = (git rev-parse HEAD).Trim()
+          test "$(git rev-parse HEAD)" = "$PR_HEAD_SHA"
+          test -z "$(git status --porcelain)"
           node scripts/ci/run-yarn.mjs changeset version
           node scripts/ci/run-yarn.mjs version:sync
           node scripts/ci/run-yarn.mjs version:check
@@ -103,13 +116,14 @@ jobs:
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add --all
           git commit -m "chore(release): v6.0.0"
-          if ((git rev-parse HEAD^).Trim() -cne $triggerSha) { throw "Release parent is not the trigger SHA" }
-          if ((git log -1 --pretty=%s).Trim() -cne 'chore(release): v6.0.0') { throw "Unexpected release commit subject" }
-          "TRIGGER_SHA=$triggerSha" | Out-File -Append $env:GITHUB_ENV
+          test "$(git rev-parse HEAD^)" = "$PR_HEAD_SHA"
+          test "$(git log -1 --pretty=%s)" = 'chore(release): v6.0.0'
       - name: Verify and build only the release tree
+        working-directory: source
         run: |
           node scripts/check-provenance.mjs
           node scripts/check-generated.mjs
+          node scripts/ci/run-yarn.mjs check:csinterface
           node scripts/ci/run-yarn.mjs version:check
           node scripts/ci/run-yarn.mjs lint
           node scripts/ci/run-yarn.mjs typecheck
@@ -120,20 +134,108 @@ jobs:
           node scripts/ci/run-yarn.mjs check:removed
           git diff --exit-code
       - name: Run the release tree under CEP Node 17.7.1
+        working-directory: source
         env:
-          NODE17_ARCHIVE: node-v17.7.1-win-x64.zip
-          NODE17_SHA256: dfb952d4c741957ca5191b9b97ac62630de431d3962c088a935e78e988c3378c
+          NODE17_ARCHIVE: node-v17.7.1-linux-x64.tar.xz
+          NODE17_SHA256: 6992cfba9d1d37293305a569a2aab049e3fbfa304410dbec8e55d58634811132
         run: |
-          $archive = Join-Path $env:RUNNER_TEMP $env:NODE17_ARCHIVE
-          Invoke-WebRequest -Uri "https://nodejs.org/download/release/v17.7.1/$env:NODE17_ARCHIVE" -OutFile $archive
-          $actual = (Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant()
-          if ($actual -cne $env:NODE17_SHA256) { throw "Node 17 archive SHA-256 mismatch: $actual" }
-          Expand-Archive $archive -DestinationPath $env:RUNNER_TEMP
-          $node17 = Join-Path $env:RUNNER_TEMP node-v17.7.1-win-x64/node.exe
-          & $node17 --version
-          if ($LASTEXITCODE -ne 0) { throw 'Node 17 executable failed' }
-          & $node17 test/server/node17Smoke.cjs build/bodygroovn/server/main.js build/bodygroovn/server/pngWorker.js
-          if ($LASTEXITCODE -ne 0) { throw 'Node 17 release-tree smoke test failed' }
+          archive="$RUNNER_TEMP/$NODE17_ARCHIVE"
+          curl --fail --location --silent --show-error \
+            "https://nodejs.org/download/release/v17.7.1/$NODE17_ARCHIVE" \
+            --output "$archive"
+          echo "$NODE17_SHA256  $archive" | sha256sum --check --strict
+          tar -xf "$archive" -C "$RUNNER_TEMP"
+          "$RUNNER_TEMP/node-v17.7.1-linux-x64/bin/node" --version
+          "$RUNNER_TEMP/node-v17.7.1-linux-x64/bin/node" \
+            test/server/node17Smoke.cjs \
+            build/bodygroovn/server/main.js \
+            build/bodygroovn/server/pngWorker.js
+      - id: identity
+        name: Assemble and authenticate the unsigned release tree
+        working-directory: source
+        env:
+          BASE_SHA: ${{ needs.inspect.outputs.base_sha }}
+          HEAD_SHA: ${{ needs.inspect.outputs.head_sha }}
+          PR_NUMBER: ${{ needs.inspect.outputs.pull_request_number }}
+          TRUSTED_WORKFLOW_SHA: ${{ github.sha }}
+        run: |
+          unsigned_artifact_name="unsigned-release-tree-v6.0.0-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          unsigned="$GITHUB_WORKSPACE/unsigned"
+          mkdir "$unsigned"
+          cp -a build/bodygroovn "$unsigned/payload"
+          cp build/unsigned-payload-manifest.json "$unsigned/unsigned-payload-manifest.json"
+          git update-ref refs/bodygroovn/release-candidate HEAD
+          git bundle create "$unsigned/bodygroovn-v6.0.0.git.bundle" refs/bodygroovn/release-candidate
+          node ../scripts/release/write-unsigned-metadata.mjs \
+            "$unsigned" "$GITHUB_REPOSITORY" "$PR_NUMBER" "$BASE_SHA" "$HEAD_SHA" \
+            "$TRUSTED_WORKFLOW_SHA" "$GITHUB_ACTOR" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" \
+            "$unsigned_artifact_name"
+          node ../scripts/release/verify-unsigned-candidate.mjs \
+            "$unsigned" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" "$GITHUB_REPOSITORY" \
+            "$PR_NUMBER" "$BASE_SHA" "$HEAD_SHA" "$TRUSTED_WORKFLOW_SHA" "$GITHUB_ACTOR"
+          echo "unsigned_artifact_name=$unsigned_artifact_name" >> "$GITHUB_OUTPUT"
+      - id: upload
+        name: Upload the immutable unsigned release tree
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ${{ steps.identity.outputs.unsigned_artifact_name }}
+          path: unsigned/*
+          if-no-files-found: error
+          retention-days: 90
+          overwrite: false
+
+  sign-candidate:
+    needs: [inspect, build-release-tree]
+    runs-on: windows-latest
+    environment: release-signing
+    permissions:
+      contents: read
+      pull-requests: read
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Checkout only the trusted main workflow tree
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          version: 2026.8.14
+          install: true
+          cache: false
+          github_token: ${{ github.token }}
+      - name: Verify the trusted toolchain
+        run: node scripts/ci/check-toolchain.mjs
+      - name: Download the exact unsigned release tree
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: ${{ needs.build-release-tree.outputs.unsigned_artifact_name }}
+          path: unsigned
+      - name: Re-authenticate the pull request and unsigned tree
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ needs.inspect.outputs.pull_request_number }}
+          BASE_SHA: ${{ needs.inspect.outputs.base_sha }}
+          HEAD_SHA: ${{ needs.inspect.outputs.head_sha }}
+          TRUSTED_WORKFLOW_SHA: ${{ github.sha }}
+        run: |
+          gh api "repos/$env:GITHUB_REPOSITORY/pulls/$env:PR_NUMBER" > "$env:RUNNER_TEMP/pull-request.json"
+          node scripts/release/verify-pr-source.mjs `
+            "$env:RUNNER_TEMP/pull-request.json" `
+            $env:GITHUB_REPOSITORY `
+            $env:PR_NUMBER `
+            $env:HEAD_SHA `
+            "$env:RUNNER_TEMP/pr-output.txt"
+          $verifiedBase = (Get-Content "$env:RUNNER_TEMP/pr-output.txt" | Where-Object { $_.StartsWith('base_sha=') }).Substring(9)
+          if ($verifiedBase -cne $env:BASE_SHA) { throw 'Pull request base changed after the unsigned build' }
+          $remoteMain = ((git ls-remote origin refs/heads/main) -split '\s+')[0]
+          if ($LASTEXITCODE -ne 0 -or $remoteMain -cne $env:BASE_SHA) { throw 'Remote main changed after the unsigned build' }
+          node scripts/release/verify-unsigned-candidate.mjs `
+            unsigned $env:GITHUB_RUN_ID $env:GITHUB_RUN_ATTEMPT $env:GITHUB_REPOSITORY `
+            $env:PR_NUMBER $env:BASE_SHA $env:HEAD_SHA $env:TRUSTED_WORKFLOW_SHA $env:GITHUB_ACTOR
       - name: Download and authenticate ZXPSignCmd 4.1.3
         env:
           SIGNER_URL: https://raw.githubusercontent.com/Adobe-CEP/CEP-Resources/fcee8de5537d2dd2ed3d91d5a495b7041155b280/ZXPSignCMD/4.1.3/x64/ZXPSignCmd.exe
@@ -141,11 +243,11 @@ jobs:
         run: |
           $signer = Join-Path $env:RUNNER_TEMP ZXPSignCmd.exe
           Invoke-WebRequest -Uri $env:SIGNER_URL -OutFile $signer
-          if ((Get-Item $signer).Length -ne 4542464) { throw "ZXPSignCmd byte length mismatch" }
+          if ((Get-Item $signer).Length -ne 4542464) { throw 'ZXPSignCmd byte length mismatch' }
           $actual = (Get-FileHash $signer -Algorithm SHA256).Hash.ToLowerInvariant()
           if ($actual -cne $env:SIGNER_SHA256) { throw "ZXPSignCmd SHA-256 mismatch: $actual" }
           "SIGNER=$signer" | Out-File -Append $env:GITHUB_ENV
-      - name: Decode and authenticate signing certificate
+      - name: Decode and authenticate the signing certificate
         env:
           CERTIFICATE_BASE64: ${{ secrets.ZXP_CERTIFICATE_P12_BASE64 }}
           CERTIFICATE_PASSWORD: ${{ secrets.ZXP_CERTIFICATE_PASSWORD }}
@@ -153,32 +255,55 @@ jobs:
         run: |
           $certificatePath = Join-Path $env:RUNNER_TEMP bodygroovn-release.p12
           [IO.File]::WriteAllBytes($certificatePath, [Convert]::FromBase64String($env:CERTIFICATE_BASE64))
-          ./scripts/release/verify-signing-certificate.ps1 -CertificatePath $certificatePath -CertificatePassword $env:CERTIFICATE_PASSWORD -ExpectedFingerprint $env:EXPECTED_FINGERPRINT
+          ./scripts/release/verify-signing-certificate.ps1 `
+            -CertificatePath $certificatePath `
+            -CertificatePassword $env:CERTIFICATE_PASSWORD `
+            -ExpectedFingerprint $env:EXPECTED_FINGERPRINT
           "CERTIFICATE_PATH=$certificatePath" | Out-File -Append $env:GITHUB_ENV
-      - name: Sign, verify, and assemble immutable candidate
+      - name: Sign and verify the authenticated payload
         env:
           CERTIFICATE_PASSWORD: ${{ secrets.ZXP_CERTIFICATE_PASSWORD }}
           CERTIFICATE_FINGERPRINT: ${{ secrets.ZXP_SIGNING_CERT_FINGERPRINT_SHA256 }}
           TIMESTAMP_AUTHORITY: http://timestamp.digicert.com/
+          PR_NUMBER: ${{ needs.inspect.outputs.pull_request_number }}
+          BASE_SHA: ${{ needs.inspect.outputs.base_sha }}
+          HEAD_SHA: ${{ needs.inspect.outputs.head_sha }}
+          TRUSTED_WORKFLOW_SHA: ${{ github.sha }}
+          UNSIGNED_ARTIFACT_DIGEST: ${{ needs.build-release-tree.outputs.unsigned_artifact_digest }}
         run: |
-          $candidate = Join-Path $PWD candidate
-          New-Item -ItemType Directory -Path $candidate | Out-Null
-          $zxp = Join-Path $candidate bodygroovn-v6.0.0.zxp
-          & $env:SIGNER -sign build/bodygroovn $zxp $env:CERTIFICATE_PATH $env:CERTIFICATE_PASSWORD -tsa $env:TIMESTAMP_AUTHORITY
-          if ($LASTEXITCODE -ne 0) { throw "ZXPSignCmd sign failed" }
-          $verifyLog = Join-Path $candidate zxp-verify.txt
+          New-Item -ItemType Directory -Path candidate | Out-Null
+          $zxp = Join-Path $PWD candidate/bodygroovn-v6.0.0.zxp
+          & $env:SIGNER -sign unsigned/payload $zxp $env:CERTIFICATE_PATH $env:CERTIFICATE_PASSWORD -tsa $env:TIMESTAMP_AUTHORITY
+          if ($LASTEXITCODE -ne 0) { throw 'ZXPSignCmd sign failed' }
+          $verifyLog = Join-Path $PWD candidate/zxp-verify.txt
           "Configured timestamp authority: $env:TIMESTAMP_AUTHORITY" | Set-Content -Path $verifyLog -Encoding utf8NoBOM
           & $env:SIGNER -verify $zxp -certInfo 2>&1 | ForEach-Object { "$_" } | Tee-Object -FilePath $verifyLog -Append
-          if ($LASTEXITCODE -ne 0) { throw "ZXPSignCmd verify failed" }
-          ./scripts/release/verify-zxp-signature.ps1 -ZxpPath $zxp -VerificationLogPath $verifyLog -ExpectedFingerprint $env:CERTIFICATE_FINGERPRINT
+          if ($LASTEXITCODE -ne 0) { throw 'ZXPSignCmd verify failed' }
+          ./scripts/release/verify-zxp-signature.ps1 `
+            -ZxpPath $zxp `
+            -VerificationLogPath $verifyLog `
+            -ExpectedFingerprint $env:CERTIFICATE_FINGERPRINT
           node scripts/write-sha256-sidecar.mjs $zxp "$zxp.sha256"
           node scripts/verify-sha256-sidecar.mjs $zxp "$zxp.sha256"
-          Copy-Item build/unsigned-payload-manifest.json $candidate
-          git update-ref refs/bodygroovn/release-candidate HEAD
-          git bundle create (Join-Path $candidate bodygroovn-v6.0.0.git.bundle) refs/bodygroovn/release-candidate
-          if ($LASTEXITCODE -ne 0) { throw "git bundle creation failed" }
-          node scripts/release/write-provenance.mjs $candidate $env:TRIGGER_SHA $env:GITHUB_RUN_ID $env:GITHUB_RUN_ATTEMPT $env:CERTIFICATE_FINGERPRINT
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+          Copy-Item unsigned/bodygroovn-v6.0.0.git.bundle candidate/
+          Copy-Item unsigned/unsigned-payload-manifest.json candidate/
+          $sha = (Get-FileHash $zxp -Algorithm SHA256).Hash.ToLowerInvariant()
+          $fingerprint = $env:CERTIFICATE_FINGERPRINT.ToLowerInvariant()
+          $unsignedDigest = ($env:UNSIGNED_ARTIFACT_DIGEST -replace '^sha256:', '').ToLowerInvariant()
+          node scripts/release/write-provenance.mjs `
+            candidate unsigned/unsigned-release.json $env:GITHUB_REPOSITORY $env:PR_NUMBER `
+            $env:GITHUB_RUN_ID $env:GITHUB_RUN_ATTEMPT `
+            $fingerprint $unsignedDigest
+          node scripts/release/verify-candidate.mjs `
+            candidate $env:GITHUB_REPOSITORY $env:PR_NUMBER `
+            $env:GITHUB_RUN_ID $env:GITHUB_RUN_ATTEMPT `
+            $unsignedDigest $sha
+          "ZXP SHA-256: $sha" >> $env:GITHUB_STEP_SUMMARY
+          "Candidate artifact: release-candidate-v6.0.0-$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT" >> $env:GITHUB_STEP_SUMMARY
+          "Required approval matrix: Windows/macOS x After Effects 2025/2026 (four records, one exact ZXP SHA-256)." >> $env:GITHUB_STEP_SUMMARY
+          "Checklist: $env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/blob/$env:TRUSTED_WORKFLOW_SHA/release/PR_RELEASE.md#maintainer-test-and-approval" >> $env:GITHUB_STEP_SUMMARY
+      - name: Upload the signed candidate for maintainer testing
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: release-candidate-v6.0.0-${{ github.run_id }}-${{ github.run_attempt }}
           path: candidate/*

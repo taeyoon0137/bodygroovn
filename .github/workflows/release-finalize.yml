@@ -1,22 +1,22 @@
-name: Publish v6.0.0
+name: Publish tested v6.0.0 candidate
 
 on:
   workflow_dispatch:
     inputs:
+      pr_number:
+        description: Exact pull request used to build the tested candidate
+        required: true
+        type: string
       candidate_run_id:
-        description: Exact successful candidate run ID
+        description: Exact successful candidate workflow run ID
         required: true
         type: string
       candidate_run_attempt:
-        description: Exact candidate run attempt
+        description: Exact candidate workflow run attempt
         required: true
         type: string
-      validation_run_id:
-        description: Exact successful 2x2 validation run ID
-        required: true
-        type: string
-      validation_run_attempt:
-        description: Exact validation run attempt
+      expected_zxp_sha256:
+        description: Exact lowercase SHA-256 of the maintainer-tested ZXP
         required: true
         type: string
 
@@ -32,77 +32,128 @@ jobs:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment: production-release
+    env:
+      MISE_AUTO_ENV: 'false'
+      MISE_CEILING_PATHS: ${{ github.workspace }}/..
+      MISE_CONFIG_DIR: ${{ github.workspace }}/.bodygroovn-mise/config
+      MISE_ENV_CONF_D: 'false'
+      MISE_LOCKED: '1'
+      MISE_NO_ENV: '1'
+      MISE_NO_HOOKS: '1'
+      MISE_OVERRIDE_CONFIG_FILENAMES: mise.toml
+      MISE_OVERRIDE_TOOL_VERSIONS_FILENAMES: none
+      MISE_SYSTEM_CONFIG_DIR: ${{ github.workspace }}/.bodygroovn-mise/system
     permissions:
-      contents: write
       actions: read
+      contents: write
+      pull-requests: read
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Checkout only the trusted main workflow tree
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
+          ref: ${{ github.sha }}
           fetch-depth: 0
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /.gitattributes
+            /mise.lock
+            /mise.toml
+            /release/payload-inventory.txt
+            /release/trusted-release-automation.txt
+            /scripts/ci/check-toolchain.mjs
+            /scripts/ci/toolchain.mjs
+            /scripts/release/bootstrap-contract.test.mjs
+            /scripts/release/finalize-release.sh
+            /scripts/release/trusted-payload-inventory.mjs
+            /scripts/release/verify-candidate.mjs
+            /scripts/release/verify-pr-source.mjs
+            /scripts/release/verify-run-metadata.mjs
+            /scripts/release/verify-signing-certificate.ps1
+            /scripts/release/verify-unsigned-candidate.mjs
+            /scripts/release/verify-zxp-signature.ps1
+            /scripts/release/write-provenance.mjs
+            /scripts/release/write-unsigned-metadata.mjs
+            /scripts/verify-sha256-sidecar.mjs
+            /scripts/write-sha256-sidecar.mjs
+      - name: Isolate mise from runner and alternate repository configuration
+        run: mkdir -p "$MISE_CONFIG_DIR" "$MISE_SYSTEM_CONFIG_DIR"
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
           version: 2026.8.14
-          install: true
-          cache: true
+          install: false
+          cache: false
+          env: false
+          export_path: false
+          add_shims_to_path: true
           github_token: ${{ github.token }}
-      - name: Verify the exact mise toolchain
-        run: node scripts/ci/check-toolchain.mjs
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+      - name: Install and verify only the trusted locked toolchain
+        run: |
+          config_json=$(mise -C "$GITHUB_WORKSPACE" config ls --json)
+          printf '%s\n' "$config_json"
+          test "$(jq 'length' <<<"$config_json")" = 1
+          test "$(jq -r '.[0].path' <<<"$config_json")" = "$GITHUB_WORKSPACE/mise.toml"
+          mise -C "$GITHUB_WORKSPACE" install --locked
+          mise -C "$GITHUB_WORKSPACE" exec -- node scripts/ci/check-toolchain.mjs
+      - name: Download only the named signed candidate
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           name: release-candidate-v6.0.0-${{ inputs.candidate_run_id }}-${{ inputs.candidate_run_attempt }}
           path: candidate
           repository: ${{ github.repository }}
           run-id: ${{ inputs.candidate_run_id }}
           github-token: ${{ github.token }}
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
-        with:
-          pattern: ae-validation-*-${{ inputs.candidate_run_id }}-${{ inputs.candidate_run_attempt }}-${{ inputs.validation_run_id }}-${{ inputs.validation_run_attempt }}
-          path: validations
-          merge-multiple: true
-          repository: ${{ github.repository }}
-          run-id: ${{ inputs.validation_run_id }}
-          github-token: ${{ github.token }}
-      - name: Verify immutable candidate, Git bundle, and 2x2 evidence
+      - name: Verify candidate workflow, pull request, artifact, and tested digest
         env:
           GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ inputs.pr_number }}
           CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
           CANDIDATE_RUN_ATTEMPT: ${{ inputs.candidate_run_attempt }}
-          VALIDATION_RUN_ID: ${{ inputs.validation_run_id }}
-          VALIDATION_RUN_ATTEMPT: ${{ inputs.validation_run_attempt }}
+          EXPECTED_ZXP_SHA256: ${{ inputs.expected_zxp_sha256 }}
         run: |
           gh api "repos/$GITHUB_REPOSITORY/actions/workflows/release-candidate.yml" > "$RUNNER_TEMP/candidate-workflow.json"
-          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$CANDIDATE_RUN_ID" > "$RUNNER_TEMP/candidate-run.json"
-          gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ae-validation.yml" > "$RUNNER_TEMP/validation-workflow.json"
-          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$VALIDATION_RUN_ID" > "$RUNNER_TEMP/validation-run.json"
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$CANDIDATE_RUN_ID/attempts/$CANDIDATE_RUN_ATTEMPT" > "$RUNNER_TEMP/candidate-run.json"
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$CANDIDATE_RUN_ID/attempts/$CANDIDATE_RUN_ATTEMPT/jobs?per_page=100" > "$RUNNER_TEMP/candidate-jobs.json"
+          gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" > "$RUNNER_TEMP/pull-request.json"
+
+          artifact_name="release-candidate-v6.0.0-$CANDIDATE_RUN_ID-$CANDIDATE_RUN_ATTEMPT"
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$CANDIDATE_RUN_ID/artifacts?name=$artifact_name" > "$RUNNER_TEMP/artifacts.json"
+          test "$(node -p "require('$RUNNER_TEMP/artifacts.json').total_count")" = 1
+          artifact_id=$(node -p "require('$RUNNER_TEMP/artifacts.json').artifacts[0].id")
+          artifact_digest=$(node -p "require('$RUNNER_TEMP/artifacts.json').artifacts[0].digest")
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact_id/zip" > "$RUNNER_TEMP/candidate.zip"
+          test "sha256:$(sha256sum "$RUNNER_TEMP/candidate.zip" | cut -d' ' -f1)" = "$artifact_digest"
+
+          base_sha=$(node -p "require('./candidate/release-provenance.json').pullRequest.base.sha")
+          head_sha=$(node -p "require('./candidate/release-provenance.json').pullRequest.head.sha")
+          unsigned_artifact_digest=$(node -p "require('./candidate/release-provenance.json').candidate.unsignedArtifactSha256")
+          node scripts/release/verify-candidate.mjs \
+            candidate "$GITHUB_REPOSITORY" "$PR_NUMBER" \
+            "$CANDIDATE_RUN_ID" "$CANDIDATE_RUN_ATTEMPT" \
+            "$unsigned_artifact_digest" "$EXPECTED_ZXP_SHA256"
           node scripts/release/verify-run-metadata.mjs \
             "$RUNNER_TEMP/candidate-workflow.json" \
             "$RUNNER_TEMP/candidate-run.json" \
-            "$RUNNER_TEMP/validation-workflow.json" \
-            "$RUNNER_TEMP/validation-run.json" \
+            "$RUNNER_TEMP/candidate-jobs.json" \
+            "$RUNNER_TEMP/pull-request.json" \
             candidate/release-provenance.json \
+            "$GITHUB_REPOSITORY" "$PR_NUMBER" \
             "$CANDIDATE_RUN_ID" "$CANDIDATE_RUN_ATTEMPT" \
-            "$VALIDATION_RUN_ID" "$VALIDATION_RUN_ATTEMPT" \
-            "$GITHUB_REPOSITORY"
-          artifact_name="release-candidate-v6.0.0-$CANDIDATE_RUN_ID-$CANDIDATE_RUN_ATTEMPT"
-          artifact_json=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$CANDIDATE_RUN_ID/artifacts?name=$artifact_name")
-          test "$(node -e 'const value=JSON.parse(process.argv[1]); process.stdout.write(String(value.total_count))' "$artifact_json")" = 1
-          artifact_id=$(node -e 'const value=JSON.parse(process.argv[1]); process.stdout.write(String(value.artifacts[0].id))' "$artifact_json")
-          artifact_digest=$(node -e 'const value=JSON.parse(process.argv[1]); process.stdout.write(value.artifacts[0].digest)' "$artifact_json")
-          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact_id/zip" > "$RUNNER_TEMP/candidate.zip"
-          test "sha256:$(sha256sum "$RUNNER_TEMP/candidate.zip" | cut -d' ' -f1)" = "$artifact_digest"
-          node scripts/release/verify-candidate.mjs candidate "$CANDIDATE_RUN_ID" "$CANDIDATE_RUN_ATTEMPT"
-          candidate_sha=$(node -p "require('./candidate/release-provenance.json').artifacts['bodygroovn-v6.0.0.zxp']")
-          node scripts/release/verify-validation-set.mjs validations "$CANDIDATE_RUN_ID" "$CANDIDATE_RUN_ATTEMPT" "$VALIDATION_RUN_ID" "$VALIDATION_RUN_ATTEMPT" "$candidate_sha"
+            "$unsigned_artifact_digest" "$EXPECTED_ZXP_SHA256"
+          node scripts/verify-sha256-sidecar.mjs \
+            candidate/bodygroovn-v6.0.0.zxp \
+            candidate/bodygroovn-v6.0.0.zxp.sha256
+          test "$(sha256sum candidate/bodygroovn-v6.0.0.zxp | cut -d' ' -f1)" = "$EXPECTED_ZXP_SHA256"
+
           git bundle verify candidate/bodygroovn-v6.0.0.git.bundle
-          git fetch candidate/bodygroovn-v6.0.0.git.bundle refs/bodygroovn/release-candidate:refs/remotes/candidate/release
+          git fetch candidate/bodygroovn-v6.0.0.git.bundle \
+            refs/bodygroovn/release-candidate:refs/remotes/candidate/release
           test "$(git rev-parse refs/remotes/candidate/release)" = "$(node -p "require('./candidate/release-provenance.json').release.commit")"
-          test "$(git rev-parse refs/remotes/candidate/release^)" = "$(node -p "require('./candidate/release-provenance.json').release.parent")"
+          test "$(git rev-parse refs/remotes/candidate/release^)" = "$head_sha"
           test "$(git rev-parse 'refs/remotes/candidate/release^{tree}')" = "$(node -p "require('./candidate/release-provenance.json').release.tree")"
-          remote_main=$(git rev-parse origin/main)
-          release_sha=$(node -p "require('./candidate/release-provenance.json').release.commit")
-          trigger_sha=$(node -p "require('./candidate/release-provenance.json').release.parent")
-          test "$remote_main" = "$trigger_sha" || test "$remote_main" = "$release_sha"
-      - name: Prepare or resume the exact draft, push atomically, and publish
+          remote_main=$(git ls-remote origin refs/heads/main | cut -f1)
+          release_sha=$(git rev-parse refs/remotes/candidate/release)
+          test "$remote_main" = "$base_sha" || test "$remote_main" = "$release_sha"
+      - name: Push atomically, then prepare or resume the exact draft and publish
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}

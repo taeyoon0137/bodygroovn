@@ -87,6 +87,7 @@ jobs:
           }
 
   verify:
+    if: github.event_name == 'push' || (github.event_name == 'pull_request' && (github.event.pull_request.base.ref == 'develop' || github.event.pull_request.head.ref == 'develop'))
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -94,8 +95,7 @@ jobs:
         with:
           version: 2026.8.14
           install: true
-          cache: true
-          github_token: ${{ github.token }}
+          cache: false
       - name: Verify the exact mise toolchain
         run: node scripts/ci/check-toolchain.mjs
       - run: node scripts/ci/run-yarn.mjs install --immutable
@@ -104,7 +104,6 @@ jobs:
           node scripts/ci/run-yarn.mjs check:csinterface
           node scripts/check-provenance.mjs
           node scripts/check-generated.mjs
-          node scripts/release/validate-ae-record.mjs release/ae-validation.example.json windows 2025 1 1 2 1
       - run: node scripts/ci/run-yarn.mjs version:check
       - run: node scripts/ci/run-yarn.mjs lint
       - run: node scripts/ci/run-yarn.mjs typecheck
@@ -118,6 +117,7 @@ jobs:
           git diff --exit-code
 
   node-17-runtime:
+    if: github.event_name == 'push' || (github.event_name == 'pull_request' && (github.event.pull_request.base.ref == 'develop' || github.event.pull_request.head.ref == 'develop'))
     name: Node 17 smoke (${{ matrix.archive }})
     strategy:
       fail-fast: false
@@ -146,8 +146,7 @@ jobs:
         with:
           version: 2026.8.14
           install: true
-          cache: true
-          github_token: ${{ github.token }}
+          cache: false
       - name: Verify the exact mise toolchain
         run: node scripts/ci/check-toolchain.mjs
       - run: node scripts/ci/run-yarn.mjs install --immutable

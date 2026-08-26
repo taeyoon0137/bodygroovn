@@ -31,10 +31,10 @@ describe('release signature verification contract', () => {
 
   it('installs the exact toolchain through pinned mise inputs', () => {
     const developWorkflow = fs.readFileSync('.github/workflows/develop-ci.yml', 'utf8')
+    const bootstrapWorkflow = fs.readFileSync('.github/workflows/release-bootstrap-ci.yml', 'utf8')
     const candidateWorkflow = fs.readFileSync('.github/workflows/release-candidate.yml', 'utf8')
-    const validationWorkflow = fs.readFileSync('.github/workflows/ae-validation.yml', 'utf8')
     const finalizerWorkflow = fs.readFileSync('.github/workflows/release-finalize.yml', 'utf8')
-    const workflows = `${developWorkflow}\n${candidateWorkflow}\n${validationWorkflow}\n${finalizerWorkflow}`
+    const workflows = `${developWorkflow}\n${bootstrapWorkflow}\n${candidateWorkflow}\n${finalizerWorkflow}`
     const config = fs.readFileSync('mise.toml', 'utf8')
     const lock = fs.readFileSync('mise.lock', 'utf8')
     const verifier = fs.readFileSync('scripts/ci/check-toolchain.mjs', 'utf8')
@@ -43,8 +43,8 @@ describe('release signature verification contract', () => {
     const action = 'jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c'
 
     expect(developWorkflow.match(new RegExp(action, 'g'))).toHaveLength(2)
+    expect(bootstrapWorkflow.match(new RegExp(action, 'g'))).toHaveLength(1)
     expect(candidateWorkflow.match(new RegExp(action, 'g'))).toHaveLength(3)
-    expect(validationWorkflow.match(new RegExp(action, 'g'))).toHaveLength(1)
     expect(finalizerWorkflow.match(new RegExp(action, 'g'))).toHaveLength(1)
     expect(workflows.match(/version: 2026\.8\.14/g)).toHaveLength(7)
     expect(workflows.match(/node scripts\/ci\/check-toolchain\.mjs/g)).toHaveLength(7)

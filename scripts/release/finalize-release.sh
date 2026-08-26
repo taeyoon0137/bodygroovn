@@ -3,78 +3,238 @@ set -euo pipefail
 
 candidate_dir=${1:?candidate directory is required}
 provenance="$candidate_dir/release-provenance.json"
-release_sha=$(node -p "require('./$provenance').release.commit")
-trigger_sha=$(node -p "require('./$provenance').release.parent")
+bundle="$candidate_dir/bodygroovn-v6.0.0.git.bundle"
 zxp="$candidate_dir/bodygroovn-v6.0.0.zxp"
 sidecar="$candidate_dir/bodygroovn-v6.0.0.zxp.sha256"
-candidate_run=$(node -p "require('./$provenance').candidate.runId")
-candidate_attempt=$(node -p "require('./$provenance').candidate.runAttempt")
-zxp_digest=$(node -p "require('./$provenance').artifacts['bodygroovn-v6.0.0.zxp']")
-release_body=$(printf 'First independently maintained bodygroovn release.\n\nCandidate run: %s/%s\nRelease commit: %s\nZXP SHA-256: %s' "$candidate_run" "$candidate_attempt" "$release_sha" "$zxp_digest")
+: "${GH_REPO:?GH_REPO is required}"
 
-mapfile -t draft_ids < <(gh api --paginate "repos/$GH_REPO/releases?per_page=100" --jq '.[] | select(.draft == true and .tag_name == "v6.0.0") | .id')
-if (( ${#draft_ids[@]} > 1 )); then
-  echo "More than one v6.0.0 draft exists" >&2
+json_value() {
+  node -e 'const fs=require("node:fs"); const value=process.argv.slice(2).reduce((current,key)=>current[key],JSON.parse(fs.readFileSync(process.argv[1],"utf8"))); if (typeof value !== "string" && typeof value !== "number") process.exit(2); process.stdout.write(String(value))' "$provenance" "$@"
+}
+
+release_sha=$(json_value release commit)
+release_tree=$(json_value release tree)
+pr_number=$(json_value pullRequest number)
+pr_base=$(json_value pullRequest base sha)
+pr_head=$(json_value pullRequest head sha)
+candidate_run=$(json_value candidate runId)
+candidate_attempt=$(json_value candidate runAttempt)
+zxp_digest=$(json_value artifacts bodygroovn-v6.0.0.zxp)
+release_body=$(printf 'First independently maintained bodygroovn release.\n\nPull request: #%s\nCandidate run: %s/%s\nRelease commit: %s\nZXP SHA-256: %s' "$pr_number" "$candidate_run" "$candidate_attempt" "$release_sha" "$zxp_digest")
+
+file_digest() {
+  node -e 'const fs=require("node:fs");const crypto=require("node:crypto");process.stdout.write(crypto.createHash("sha256").update(fs.readFileSync(process.argv[1])).digest("hex"))' "$1"
+}
+
+verify_release_assets() {
+  local release_id=$1
+  local asset name local_digest names_output remote_digest
+  names_output=$(gh api "repos/$GH_REPO/releases/$release_id/assets" --paginate --jq '.[].name' | LC_ALL=C sort)
+  [[ "$names_output" == $'bodygroovn-v6.0.0.zxp\nbodygroovn-v6.0.0.zxp.sha256' ]] || {
+    echo 'Release asset inventory mismatch' >&2
+    return 1
+  }
+  for asset in "$zxp" "$sidecar"; do
+    name=$(basename "$asset")
+    local_digest=$(file_digest "$asset")
+    remote_digest=$(gh api "repos/$GH_REPO/releases/$release_id/assets" --paginate --jq ".[] | select(.name == \"$name\") | .digest")
+    [[ "$remote_digest" == "sha256:$local_digest" ]] || {
+      echo "Release asset digest mismatch for $name" >&2
+      return 1
+    }
+  done
+}
+
+verify_remote_release_refs() {
+  local current_main current_tag
+  current_main=$(git ls-remote origin refs/heads/main | cut -f1)
+  current_tag=$(git ls-remote origin 'refs/tags/v6.0.0^{}' | cut -f1)
+  [[ "$current_main" == "$release_sha" ]] || {
+    echo 'Remote main no longer matches the release commit' >&2
+    return 1
+  }
+  [[ "$current_tag" == "$release_sha" ]] || {
+    echo 'Remote v6.0.0 no longer resolves to the release commit' >&2
+    return 1
+  }
+}
+
+verify_release_identity() {
+  local release_id=$1
+  local expected_draft=$2
+  local actual
+  actual=$(gh api "repos/$GH_REPO/releases/$release_id" --jq .tag_name)
+  [[ "$actual" == v6.0.0 ]] || { echo 'Release tag identity mismatch' >&2; return 1; }
+  actual=$(gh api "repos/$GH_REPO/releases/$release_id" --jq .name)
+  [[ "$actual" == 'bodygroovn v6.0.0' ]] || { echo 'Release name identity mismatch' >&2; return 1; }
+  actual=$(gh api "repos/$GH_REPO/releases/$release_id" --jq .target_commitish)
+  [[ "$actual" == "$release_sha" ]] || { echo 'Release target identity mismatch' >&2; return 1; }
+  actual=$(gh api "repos/$GH_REPO/releases/$release_id" --jq .body)
+  [[ "$actual" == "$release_body" ]] || { echo 'Release body identity mismatch' >&2; return 1; }
+  actual=$(gh api "repos/$GH_REPO/releases/$release_id" --jq .draft)
+  [[ "$actual" == "$expected_draft" ]] || { echo 'Release draft state mismatch' >&2; return 1; }
+  actual=$(gh api "repos/$GH_REPO/releases/$release_id" --jq .prerelease)
+  [[ "$actual" == false ]] || { echo 'Release prerelease state mismatch' >&2; return 1; }
+}
+
+create_release_draft() {
+  local actual_assets actual_body actual_draft actual_name actual_prerelease actual_tag
+  local attempt created_id response
+  for ((attempt = 1; attempt <= 30; attempt += 1)); do
+    response=$(gh api --method POST "repos/$GH_REPO/releases" \
+      -f tag_name=v6.0.0 \
+      -f target_commitish="$release_sha" \
+      -f name='bodygroovn v6.0.0' \
+      -f body="$release_body" \
+      -F draft=true \
+      -F prerelease=false)
+    created_id=$(jq -er '.id | select(type == "number" and . > 0) | tostring' <<<"$response")
+    actual_tag=$(jq -er '.tag_name | select(type == "string")' <<<"$response")
+    actual_name=$(jq -er '.name | select(type == "string")' <<<"$response")
+    actual_body=$(jq -er '.body | select(type == "string")' <<<"$response")
+    actual_draft=$(jq -er '.draft | select(type == "boolean") | tostring' <<<"$response")
+    actual_prerelease=$(jq -er '.prerelease | select(type == "boolean") | tostring' <<<"$response")
+    actual_assets=$(jq -er '.assets | select(type == "array") | length' <<<"$response")
+
+    if [[ "$actual_tag" == v6.0.0 ]]; then
+      [[ "$actual_name" == 'bodygroovn v6.0.0' \
+        && "$actual_body" == "$release_body" \
+        && "$actual_draft" == true \
+        && "$actual_prerelease" == false \
+        && "$actual_assets" == 0 ]] || {
+        echo 'New v6.0.0 draft identity mismatch' >&2
+        return 1
+      }
+      draft_id=$created_id
+      return 0
+    fi
+
+    [[ "$actual_tag" == untagged-* \
+      && "$actual_draft" == true \
+      && "$actual_assets" == 0 ]] || {
+      echo "Unexpected draft response while waiting for v6.0.0: $actual_tag" >&2
+      return 1
+    }
+    gh api --method DELETE "repos/$GH_REPO/releases/$created_id" --silent
+    if (( attempt < 30 )); then
+      echo "GitHub has not indexed v6.0.0 yet; retrying draft creation in 5 seconds ($attempt/30)."
+      sleep 5
+    fi
+  done
+  echo 'GitHub did not create a v6.0.0 draft after 30 attempts' >&2
+  return 1
+}
+
+[[ "$release_sha" =~ ^[0-9a-f]{40}$ && "$release_tree" =~ ^[0-9a-f]{40}$ ]] \
+  || { echo 'Invalid release commit identity' >&2; exit 1; }
+[[ "$pr_base" =~ ^[0-9a-f]{40}$ && "$pr_head" =~ ^[0-9a-f]{40}$ ]] \
+  || { echo 'Invalid pull request commit identity' >&2; exit 1; }
+[[ "$pr_number" =~ ^[1-9][0-9]*$ && "$candidate_run" =~ ^[1-9][0-9]*$ \
+  && "$candidate_attempt" =~ ^[1-9][0-9]*$ ]] \
+  || { echo 'Invalid candidate numeric identity' >&2; exit 1; }
+[[ "$zxp_digest" =~ ^[0-9a-f]{64}$ ]] \
+  || { echo 'Invalid candidate ZXP digest' >&2; exit 1; }
+[[ -f "$bundle" && ! -L "$bundle" && -f "$zxp" && ! -L "$zxp" \
+  && -f "$sidecar" && ! -L "$sidecar" ]] \
+  || { echo 'Candidate release files are missing or unsafe' >&2; exit 1; }
+
+git bundle verify "$bundle" >/dev/null
+bundle_heads_output=$(git bundle list-heads "$bundle")
+[[ "$bundle_heads_output" == "$release_sha refs/bodygroovn/release-candidate" ]] \
+  || { echo 'Release bundle ref identity mismatch' >&2; exit 1; }
+git fetch --quiet "$bundle" refs/bodygroovn/release-candidate:refs/bodygroovn/release-candidate
+[[ "$(git rev-parse refs/bodygroovn/release-candidate)" == "$release_sha" ]] \
+  || { echo 'Release bundle commit mismatch' >&2; exit 1; }
+[[ "$(git show -s --format='%H %P' refs/bodygroovn/release-candidate)" == "$release_sha $pr_head" ]] \
+  || { echo 'Release commit must have exactly the pull request head as its only parent' >&2; exit 1; }
+[[ "$(git rev-parse 'refs/bodygroovn/release-candidate^{tree}')" == "$release_tree" ]] \
+  || { echo 'Release bundle tree mismatch' >&2; exit 1; }
+[[ "$(git log -1 --pretty=%s refs/bodygroovn/release-candidate)" == 'chore(release): v6.0.0' ]] \
+  || { echo 'Release bundle commit message mismatch' >&2; exit 1; }
+git merge-base --is-ancestor "$pr_base" "$pr_head" \
+  || { echo 'Pull request head does not descend from the recorded base' >&2; exit 1; }
+
+node scripts/verify-sha256-sidecar.mjs "$zxp" "$sidecar"
+
+published_ids_output=$(gh api --paginate "repos/$GH_REPO/releases?per_page=100" --jq '.[] | select(.draft == false and .tag_name == "v6.0.0") | .id')
+if [[ "$published_ids_output" == *$'\n'* ]]; then
+  echo 'More than one published v6.0.0 release exists' >&2
   exit 1
 fi
-if (( ${#draft_ids[@]} == 0 )); then
-  draft_id=$(gh api --method POST "repos/$GH_REPO/releases" -f tag_name=v6.0.0 -f target_commitish="$release_sha" -f name='bodygroovn v6.0.0' -f body="$release_body" -F draft=true --jq .id)
-else
-  draft_id=${draft_ids[0]}
-  draft_target=$(gh api "repos/$GH_REPO/releases/$draft_id" --jq .target_commitish)
-  [[ "$draft_target" == "$release_sha" ]] || { echo "Existing draft target mismatch" >&2; exit 1; }
-  draft_body=$(gh api "repos/$GH_REPO/releases/$draft_id" --jq .body)
-  [[ "$draft_body" == "$release_body" ]] || { echo "Existing draft provenance mismatch" >&2; exit 1; }
+if [[ -n "$published_ids_output" ]]; then
+  published_id=$published_ids_output
+  verify_remote_release_refs
+  verify_release_identity "$published_id" false
+  verify_release_assets "$published_id"
+  echo "Verified already-published v6.0.0 from pull request #$pr_number at $release_sha."
+  exit 0
 fi
 
-mapfile -t asset_names < <(gh api "repos/$GH_REPO/releases/$draft_id/assets" --paginate --jq '.[].name')
-for name in "${asset_names[@]}"; do
-  [[ "$name" == bodygroovn-v6.0.0.zxp || "$name" == bodygroovn-v6.0.0.zxp.sha256 ]] || { echo "Unexpected draft asset: $name" >&2; exit 1; }
-done
+remote_main=$(git ls-remote origin refs/heads/main | cut -f1)
+remote_tag=$(git ls-remote origin 'refs/tags/v6.0.0^{}' | cut -f1)
+if [[ "$remote_main" == "$pr_base" ]]; then
+  [[ -z "$remote_tag" ]] || { echo 'v6.0.0 already exists before the atomic release push' >&2; exit 1; }
+  git config user.name 'github-actions[bot]'
+  git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+  git tag -a v6.0.0 "$release_sha" -m 'Release bodygroovn v6.0.0'
+  git push --atomic \
+    --force-with-lease="refs/heads/main:$pr_base" \
+    origin \
+    "$release_sha:refs/heads/main" \
+    refs/tags/v6.0.0
+elif [[ "$remote_main" == "$release_sha" ]]; then
+  [[ "$remote_tag" == "$release_sha" ]] || {
+    echo 'Recovery found release main without the expected tag' >&2
+    exit 1
+  }
+else
+  echo 'Remote main is neither the pull request base nor the release commit' >&2
+  exit 1
+fi
+
+verify_remote_release_refs
+
+draft_ids_output=$(gh api --paginate "repos/$GH_REPO/releases?per_page=100" --jq '.[] | select(.draft == true and .tag_name == "v6.0.0") | .id')
+if [[ "$draft_ids_output" == *$'\n'* ]]; then
+  echo 'More than one v6.0.0 draft exists' >&2
+  exit 1
+fi
+if [[ -z "$draft_ids_output" ]]; then
+  create_release_draft
+else
+  draft_id=$draft_ids_output
+fi
+verify_release_identity "$draft_id" true
+
+asset_names_output=$(gh api "repos/$GH_REPO/releases/$draft_id/assets" --paginate --jq '.[].name')
+if [[ -n "$asset_names_output" ]]; then
+  while IFS= read -r name; do
+    [[ "$name" == bodygroovn-v6.0.0.zxp || "$name" == bodygroovn-v6.0.0.zxp.sha256 ]] || {
+      echo "Unexpected draft asset: $name" >&2
+      exit 1
+    }
+  done <<<"$asset_names_output"
+fi
 for asset in "$zxp" "$sidecar"; do
   name=$(basename "$asset")
-  if ! printf '%s\n' "${asset_names[@]}" | grep -Fxq "$name"; then
+  if ! grep -Fxq "$name" <<<"$asset_names_output"; then
     gh release upload v6.0.0 "$asset" --repo "$GH_REPO"
   fi
 done
 
-node scripts/verify-sha256-sidecar.mjs "$zxp" "$sidecar"
-for asset in "$zxp" "$sidecar"; do
-  name=$(basename "$asset")
-  expected_digest="sha256:$(sha256sum "$asset" | cut -d' ' -f1)"
-  remote_digest=$(gh api "repos/$GH_REPO/releases/$draft_id/assets" --paginate --jq ".[] | select(.name == \"$name\") | .digest")
-  [[ "$remote_digest" == "$expected_digest" ]] || { echo "Draft asset digest mismatch for $name" >&2; exit 1; }
-done
-remote_main=$(git ls-remote origin refs/heads/main | cut -f1)
-if [[ "$remote_main" == "$trigger_sha" ]]; then
-  git tag -a v6.0.0 "$release_sha" -m 'Release bodygroovn v6.0.0'
-  git push --atomic --force-with-lease="refs/heads/main:$trigger_sha" origin "$release_sha:refs/heads/main" refs/tags/v6.0.0
-elif [[ "$remote_main" == "$release_sha" ]]; then
-  [[ "$(git ls-remote origin 'refs/tags/v6.0.0^{}' | cut -f1)" == "$release_sha" ]] || { echo "Recovery found release main without the expected tag" >&2; exit 1; }
-else
-  echo "Remote main is neither the trigger nor release commit" >&2
-  exit 1
-fi
+verify_release_identity "$draft_id" true
+verify_release_assets "$draft_id"
+verify_remote_release_refs
 
-[[ "$(git ls-remote origin refs/heads/main | cut -f1)" == "$release_sha" ]]
-[[ "$(git ls-remote origin refs/tags/v6.0.0^{} | cut -f1)" == "$release_sha" ]]
-[[ "$(gh api "repos/$GH_REPO/releases/$draft_id" --jq '.draft')" == true ]]
-[[ "$(gh api "repos/$GH_REPO/releases/$draft_id" --jq '.target_commitish')" == "$release_sha" ]]
-mapfile -t ready_assets < <(gh api "repos/$GH_REPO/releases/$draft_id/assets" --paginate --jq '.[].name' | sort)
-[[ "${ready_assets[*]}" == 'bodygroovn-v6.0.0.zxp bodygroovn-v6.0.0.zxp.sha256' ]]
-for asset in "$zxp" "$sidecar"; do
-  name=$(basename "$asset")
-  expected_digest="sha256:$(sha256sum "$asset" | cut -d' ' -f1)"
-  [[ "$(gh api "repos/$GH_REPO/releases/$draft_id/assets" --paginate --jq ".[] | select(.name == \"$name\") | .digest")" == "$expected_digest" ]]
-done
-gh api --method PATCH "repos/$GH_REPO/releases/$draft_id" -f target_commitish="$release_sha" -F draft=false >/dev/null
-[[ "$(gh api "repos/$GH_REPO/releases/$draft_id" --jq '.draft')" == false ]]
-[[ "$(gh api "repos/$GH_REPO/releases/$draft_id" --jq '.target_commitish')" == "$release_sha" ]]
-mapfile -t published_assets < <(gh api "repos/$GH_REPO/releases/$draft_id/assets" --paginate --jq '.[].name' | sort)
-[[ "${published_assets[*]}" == 'bodygroovn-v6.0.0.zxp bodygroovn-v6.0.0.zxp.sha256' ]]
-for asset in "$zxp" "$sidecar"; do
-  name=$(basename "$asset")
-  expected_digest="sha256:$(sha256sum "$asset" | cut -d' ' -f1)"
-  [[ "$(gh api "repos/$GH_REPO/releases/$draft_id/assets" --paginate --jq ".[] | select(.name == \"$name\") | .digest")" == "$expected_digest" ]]
-done
-echo "Published v6.0.0 at $release_sha with exactly two assets."
+gh api --method PATCH "repos/$GH_REPO/releases/$draft_id" \
+  -f target_commitish="$release_sha" \
+  -f name='bodygroovn v6.0.0' \
+  -f body="$release_body" \
+  -F prerelease=false \
+  -F draft=false >/dev/null
+
+verify_release_identity "$draft_id" false
+verify_release_assets "$draft_id"
+verify_remote_release_refs
+
+echo "Published v6.0.0 from pull request #$pr_number at $release_sha with exactly two assets."

@@ -1,22 +1,52 @@
-# Release environment configuration
+# Release Configuration
 
-The repository environments are administrative prerequisites and are not created by a workflow.
+The release pipeline separates pull-request-controlled build work from trusted signing and publication.
 
-## `release-signing`
+## Trusted workflows
 
-- Restrict deployments to the `main` branch.
-- Do not configure required reviewers.
-- Store `ZXP_CERTIFICATE_P12_BASE64`, `ZXP_CERTIFICATE_PASSWORD`, and `ZXP_SIGNING_CERT_FINGERPRINT_SHA256` as environment secrets.
-- Provision the certificate with `C=KR, ST=Seoul, O=taeyoon0137, CN=taeyoon0137-bodygroovn`, a 1460-day validity period, and a new random password. Replace it at least 90 days before expiry.
+- `release-bootstrap-ci.yml` validates changes to the trusted automation itself.
+- `release-candidate.yml` is dispatched from `main` with an exact product pull request number and head SHA.
+- `release-finalize.yml` is dispatched from `main` with the exact tested candidate identity.
 
-## `production-release`
+All action references are pinned to full commit SHAs. Candidate and finalizer runs are accepted only when their workflow commit is on trusted `main`.
 
-- Restrict deployments to the `main` branch.
-- Require a maintainer reviewer and leave prevent-self-review disabled.
-- Keep approvals usable for up to 30 days.
+## GitHub environments
 
-The candidate workflow has read-only repository permission. Only the finalizer receives `contents: write`; `actions: read` is limited to the validation and finalizer jobs that retrieve artifacts from explicit workflow run IDs. No workflow creates branch rulesets or protection policies.
+### `release-signing`
 
-The finalizer must receive the original candidate run ID and attempt and the original validation run ID and attempt. Candidate and validation artifact names bind all four values, and the records and provenance repeat them for independent verification. A recovery execution downloads and verifies those artifacts and never rebuilds or resigns the ZXP. The legacy draft release with ID `344027289` has another tag and is outside the exact `draft == true && tag_name == "v6.0.0"` selector.
+- Deployment branches: `main` only
+- Required reviewers: none
+- Secrets:
+  - `ZXP_CERTIFICATE_P12_BASE64`
+  - `ZXP_CERTIFICATE_PASSWORD`
+  - `ZXP_SIGNING_CERT_FINGERPRINT_SHA256`
 
-Release provenance records `http://timestamp.digicert.com/` as the timestamp endpoint configured for signing. The separate ZXPSignCmd verification evidence proves that the embedded timestamp is valid; the timestamp token itself does not encode the configured request URL.
+Only the fresh Windows signing job uses this environment. The job checks out trusted `main`; it does not check out or execute pull request code.
+
+### `production-release`
+
+- Deployment branches: `main` only
+- Required reviewer: maintainer
+- Prevent self-review: off
+- Approval timeout: no more than 30 days
+- Concurrency cancellation: disabled
+
+Approval authorizes publication only for the supplied pull request number, candidate run ID and attempt, and tested ZXP SHA-256.
+
+## Permissions
+
+Workflows default to `contents: read`. The candidate inspection job additionally reads pull request metadata. Only the finalizer receives `contents: write`; cross-run candidate retrieval receives `actions: read`. Signing secrets never enter the pull-request build job.
+
+## Artifact contracts
+
+The unsigned build artifact contains the exact extension payload, deterministic payload manifest, release Git bundle, and unsigned metadata. The signed internal candidate is named:
+
+`release-candidate-v6.0.0-<run_id>-<run_attempt>`
+
+It is retained for 90 days without overwrite and contains the signed ZXP, SHA-256 sidecar, Git bundle, unsigned payload manifest, release provenance, and signature verification report. Internal workflow artifacts are not public release files.
+
+The public GitHub Release contains exactly the signed ZXP and its SHA-256 sidecar. A recovery run must identify and reuse the original candidate run and attempt; rebuilding or resigning during recovery is prohibited.
+
+After approval, the finalizer atomically advances `main` and creates the annotated tag before it creates or resumes the draft Release. This ensures that GitHub can resolve the exact release commit. If draft creation, asset upload, or publication then fails, recovery validates the remote commit and tag and reuses the same signed candidate without rebuilding it.
+
+See [PR_RELEASE.md](./PR_RELEASE.md) for the operator procedure.
