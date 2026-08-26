@@ -1,0 +1,104 @@
+name: Publish v6.0.0
+
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_run_id:
+        description: Exact successful candidate run ID
+        required: true
+        type: string
+      candidate_run_attempt:
+        description: Exact candidate run attempt
+        required: true
+        type: string
+      validation_run_id:
+        description: Exact successful 2x2 validation run ID
+        required: true
+        type: string
+      validation_run_attempt:
+        description: Exact validation run attempt
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bodygroovn-v6.0.0-production
+  cancel-in-progress: false
+
+jobs:
+  finalize:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production-release
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 24.19.0
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: release-candidate-v6.0.0-${{ inputs.candidate_run_id }}-${{ inputs.candidate_run_attempt }}
+          path: candidate
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.candidate_run_id }}
+          github-token: ${{ github.token }}
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          pattern: ae-validation-*-${{ inputs.candidate_run_id }}-${{ inputs.candidate_run_attempt }}-${{ inputs.validation_run_id }}-${{ inputs.validation_run_attempt }}
+          path: validations
+          merge-multiple: true
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.validation_run_id }}
+          github-token: ${{ github.token }}
+      - name: Verify immutable candidate, Git bundle, and 2x2 evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
+          CANDIDATE_RUN_ATTEMPT: ${{ inputs.candidate_run_attempt }}
+          VALIDATION_RUN_ID: ${{ inputs.validation_run_id }}
+          VALIDATION_RUN_ATTEMPT: ${{ inputs.validation_run_attempt }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/actions/workflows/release-candidate.yml" > "$RUNNER_TEMP/candidate-workflow.json"
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$CANDIDATE_RUN_ID" > "$RUNNER_TEMP/candidate-run.json"
+          gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ae-validation.yml" > "$RUNNER_TEMP/validation-workflow.json"
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$VALIDATION_RUN_ID" > "$RUNNER_TEMP/validation-run.json"
+          node scripts/release/verify-run-metadata.mjs \
+            "$RUNNER_TEMP/candidate-workflow.json" \
+            "$RUNNER_TEMP/candidate-run.json" \
+            "$RUNNER_TEMP/validation-workflow.json" \
+            "$RUNNER_TEMP/validation-run.json" \
+            candidate/release-provenance.json \
+            "$CANDIDATE_RUN_ID" "$CANDIDATE_RUN_ATTEMPT" \
+            "$VALIDATION_RUN_ID" "$VALIDATION_RUN_ATTEMPT" \
+            "$GITHUB_REPOSITORY"
+          artifact_name="release-candidate-v6.0.0-$CANDIDATE_RUN_ID-$CANDIDATE_RUN_ATTEMPT"
+          artifact_json=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$CANDIDATE_RUN_ID/artifacts?name=$artifact_name")
+          test "$(node -e 'const value=JSON.parse(process.argv[1]); process.stdout.write(String(value.total_count))' "$artifact_json")" = 1
+          artifact_id=$(node -e 'const value=JSON.parse(process.argv[1]); process.stdout.write(String(value.artifacts[0].id))' "$artifact_json")
+          artifact_digest=$(node -e 'const value=JSON.parse(process.argv[1]); process.stdout.write(value.artifacts[0].digest)' "$artifact_json")
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact_id/zip" > "$RUNNER_TEMP/candidate.zip"
+          test "sha256:$(sha256sum "$RUNNER_TEMP/candidate.zip" | cut -d' ' -f1)" = "$artifact_digest"
+          node scripts/release/verify-candidate.mjs candidate "$CANDIDATE_RUN_ID" "$CANDIDATE_RUN_ATTEMPT"
+          candidate_sha=$(node -p "require('./candidate/release-provenance.json').artifacts['bodygroovn-v6.0.0.zxp']")
+          node scripts/release/verify-validation-set.mjs validations "$CANDIDATE_RUN_ID" "$CANDIDATE_RUN_ATTEMPT" "$VALIDATION_RUN_ID" "$VALIDATION_RUN_ATTEMPT" "$candidate_sha"
+          git bundle verify candidate/bodygroovn-v6.0.0.git.bundle
+          git fetch candidate/bodygroovn-v6.0.0.git.bundle refs/bodygroovn/release-candidate:refs/remotes/candidate/release
+          test "$(git rev-parse refs/remotes/candidate/release)" = "$(node -p "require('./candidate/release-provenance.json').release.commit")"
+          test "$(git rev-parse refs/remotes/candidate/release^)" = "$(node -p "require('./candidate/release-provenance.json').release.parent")"
+          test "$(git rev-parse refs/remotes/candidate/release^{tree})" = "$(node -p "require('./candidate/release-provenance.json').release.tree")"
+          remote_main=$(git rev-parse origin/main)
+          release_sha=$(node -p "require('./candidate/release-provenance.json').release.commit")
+          trigger_sha=$(node -p "require('./candidate/release-provenance.json').release.parent")
+          test "$remote_main" = "$trigger_sha" || test "$remote_main" = "$release_sha"
+      - name: Prepare or resume the exact draft, push atomically, and publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: bash scripts/release/finalize-release.sh candidate

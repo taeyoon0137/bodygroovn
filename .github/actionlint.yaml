@@ -1,0 +1,8 @@
+self-hosted-runner:
+  labels:
+    # GitHub-hosted Intel label introduced after actionlint 1.7.7's runner catalog.
+    - macos-15-intel
+    - bodygroovn-windows-ae2025
+    - bodygroovn-windows-ae2026
+    - bodygroovn-macos-ae2025
+    - bodygroovn-macos-ae2026
