@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process'
 
-const output = execFileSync('git', ['status', '--porcelain=v1'], { encoding: 'utf8' }).trim()
-const changed = output ? output.split('\n').map((line) => line.slice(3).replace(/^"|"$/g, '')) : []
+const output = execFileSync('git', ['status', '--porcelain=v1'], { encoding: 'utf8' })
+const changed = output.split(/\r?\n/).filter(Boolean).map((line) => line.slice(3).replace(/^"|"$/g, ''))
 const allowed = new Set([
   '.changeset/independent-bodygroovn-release.md',
   'CHANGELOG.md',

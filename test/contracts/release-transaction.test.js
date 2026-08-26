@@ -1,6 +1,6 @@
 import { execFileSync, spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 
@@ -95,6 +95,32 @@ describe('release transaction contracts', () => {
 
     await writeFile(statusPath, `${JSON.stringify({ releases: [{ ...release, newVersion: '6.0.1' }] })}\n`)
     expect(runFailingScript('scripts/release/classify-changeset-release.mjs', [statusPath]).status).not.toBe(0)
+  })
+
+  it('preserves the porcelain status prefix when the first release change is a deletion', async () => {
+    const directory = await createTemporaryDirectory()
+    const files = [
+      '.changeset/independent-bodygroovn-release.md',
+      'bundle/CSXS/manifest.xml',
+      'bundle/jsx/helpers/versionHelper.jsx',
+      'package.json',
+    ]
+    for (const file of files) {
+      await mkdir(path.dirname(path.join(directory, file)), { recursive: true })
+      await writeFile(path.join(directory, file), 'before\n')
+    }
+    const git = (...args) => execFileSync('git', args, { cwd: directory, encoding: 'utf8' })
+    git('init', '--quiet')
+    git('config', 'user.name', 'bodygroovn release test')
+    git('config', 'user.email', 'release-test@bodygroovn.invalid')
+    git('add', '--all')
+    git('commit', '--quiet', '-m', 'test fixture')
+
+    await rm(path.join(directory, files[0]))
+    await Promise.all(files.slice(1).map(file => writeFile(path.join(directory, file), 'after\n')))
+
+    expect(runScript('scripts/release/assert-release-diff.mjs', [], { cwd: directory }))
+      .toContain('Verified 4 release-version changes.')
   })
 
   it('requires a non-empty environment-specific harness log', async () => {
