@@ -23,9 +23,9 @@ Before editing:
 2. Read the files and tests for the surface being changed.
 3. Confirm whether a file is source, generated output, or byte-exact vendored input.
 4. For behavior changes, add or update the smallest regression test that locks the intended contract.
-5. Work on `develop`; only reviewed changes with a pending Changeset move to `main`.
+5. Work on `develop`; expose reviewed changes with a pending Changeset through a non-draft `develop`-to-`main` pull request, and keep that pull request open while its exact signed candidate is tested.
 
-Do not create a version commit, tag, ZXP, or GitHub Release when `main` has no pending Changeset release.
+Do not merge the product pull request separately. The trusted candidate workflow creates an isolated release commit from the exact pull request head, and the trusted finalizer advances `main` only after that candidate passes the maintainer gate. Do not create or push a version commit, tag, ZXP, or GitHub Release outside those workflows.
 
 ## Toolchain and commands
 
@@ -65,7 +65,7 @@ TypeScript 6 is limited to configuration, ambient declarations, and tests for v6
 - `lib/CSInterface/`: byte-exact Adobe bridge, repository-authored ambient declaration, and provenance.
 - `scripts/`: deterministic generation, version, provenance, payload, QA, and release checks.
 - `test/`: unit, integration, static-contract, server, and payload tests.
-- `.github/workflows/`: locked-mise and immutable-Yarn CI, candidate signing, AE validation, and release finalization.
+- `.github/workflows/`: locked-mise and immutable-Yarn CI, trusted candidate signing, and protected release finalization.
 
 ## Version invariants
 
@@ -146,6 +146,8 @@ PNG palette values are exactly `0`, `32`, `64`, `128`, and `256`. `0` is a no-op
 - Treat Windows/macOS × AE 2025/2026 results as manual-host evidence; never infer them from unit tests.
 
 ## Release gate
+
+Follow [the pull request release contract](release/PR_RELEASE.md): open a same-repository non-draft `develop`-to-`main` pull request, dispatch the candidate workflow from trusted `main` with its exact number and head SHA, test that immutable signed candidate, and let the protected finalizer integrate the tested release commit. A separate pull request merge after candidate approval is not permitted.
 
 The v6.0.0 public release is complete only when all four AE environments validate the identical candidate SHA and GitHub Release `v6.0.0` is public with exactly:
 

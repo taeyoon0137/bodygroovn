@@ -102,7 +102,7 @@ Local builds are unsigned. Production ZXP packaging and timestamped signing occu
 ```text
 .
 ├── .changeset/          Pending product-version intent
-├── .github/workflows/   CI, candidate, AE validation, and release finalization
+├── .github/workflows/   CI, trusted candidate signing, and release finalization
 ├── bundle/              CEP manifest, ExtendScript, assets, and Node server sources
 ├── lib/CSInterface/     Byte-exact Adobe bridge, declarations, and provenance
 ├── mise.toml            Pinned Node and Yarn tool declarations
@@ -124,12 +124,12 @@ The product UI and `bm:version` show the product version. Lottie animation JSON 
 ## Release flow
 
 1. Develop on `develop` with a pending Changeset and pass locked-mise, immutable-Yarn CI.
-2. Merge the reviewed tree to `main`.
-3. The candidate workflow applies the Changeset locally, synchronizes version surfaces, creates the single English release commit, builds/tests it, signs the ZXP on Windows, verifies the signature and exact SHA sidecar bytes, preserves a Git bundle, and uploads an immutable internal candidate artifact.
-4. Validate the same candidate ZXP on Windows and macOS with After Effects 2025 and 2026. Automated logs and a human UI check must record OS, exact After Effects version/build, candidate run/attempt, and ZXP SHA.
-5. After the protected production approval, the finalizer re-verifies the candidate, validation evidence, commit/tree, bundle, and digests; prepares or validates the one matching draft; uploads only the ZXP and SHA sidecar; atomically publishes the release commit and `v6.0.0` tag; then verifies and publishes the GitHub Release.
+2. Open a non-draft pull request from the repository's `develop` branch to `main`. Keep it open and record its exact head SHA; do not merge it separately.
+3. Dispatch the trusted candidate workflow from `main` with the pull request number and head SHA. It checks out that exact product tree, applies the Changeset locally, synchronizes version surfaces, creates the single English release commit, builds/tests it, signs the ZXP on Windows, verifies the signature and exact SHA sidecar bytes, preserves a Git bundle, and uploads an immutable internal candidate artifact.
+4. Validate the same candidate ZXP on Windows and macOS with After Effects 2025 and 2026. Each test record must include the OS, exact After Effects version/build, pull request identity, candidate run/attempt, and ZXP SHA; the maintainer also performs the required UI checks.
+5. After the protected production approval, the trusted finalizer re-verifies the unchanged pull request, candidate run, commit/tree, bundle, and digests; atomically advances `main` to the tested release commit with the `v6.0.0` tag; prepares or resumes the one matching draft; uploads only the ZXP and SHA sidecar; then verifies and publishes the GitHub Release.
 
-If any host environment fails, the release stops. Recovery reuses the explicitly selected candidate run and attempt; it does not rebuild or resign.
+If the pull request head changes or any host environment fails, the candidate is rejected and a new one must be built. Recovery reuses the explicitly selected candidate run and attempt; it does not rebuild or resign. See [the pull request release contract](release/PR_RELEASE.md) for the exact transaction.
 
 ## What “compression” means here
 
