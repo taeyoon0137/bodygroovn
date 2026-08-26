@@ -22,13 +22,7 @@ jobs:
         with:
           node-version: 24.19.0
       - name: Activate the exact package manager toolchain
-        run: |
-          npm install --global corepack@0.35.0
-          corepack enable
-          corepack prepare yarn@4.18.0 --activate
-          test "$(node --version)" = v24.19.0
-          test "$(corepack --version)" = 0.35.0
-          test "$(yarn --version)" = 4.18.0
+        run: node scripts/ci/activate-package-manager.mjs
       - run: yarn install --immutable
       - id: release
         name: Classify pending Changesets
@@ -46,13 +40,7 @@ jobs:
         with:
           node-version: 24.19.0
       - name: Activate the exact package manager toolchain
-        run: |
-          npm install --global corepack@0.35.0
-          corepack enable
-          corepack prepare yarn@4.18.0 --activate
-          test "$(node --version)" = v24.19.0
-          test "$(corepack --version)" = 0.35.0
-          test "$(yarn --version)" = 4.18.0
+        run: node scripts/ci/activate-package-manager.mjs
       - run: yarn install --immutable
       - name: Verify without creating a release
         run: |
@@ -84,13 +72,7 @@ jobs:
         with:
           node-version: 24.19.0
       - name: Activate the exact package manager toolchain
-        run: |
-          npm install --global corepack@0.35.0
-          corepack enable
-          corepack prepare yarn@4.18.0 --activate
-          if ((node --version).Trim() -cne 'v24.19.0') { throw "Unexpected Node version" }
-          if ((corepack --version).Trim() -cne '0.35.0') { throw "Unexpected Corepack version" }
-          if ((yarn --version).Trim() -cne '4.18.0') { throw "Unexpected Yarn version" }
+        run: node scripts/ci/activate-package-manager.mjs
       - run: yarn install --immutable
       - name: Require a clean main checkout
         run: |

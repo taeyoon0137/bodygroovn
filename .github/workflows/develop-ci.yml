@@ -94,14 +94,7 @@ jobs:
         with:
           node-version: 24.19.0
       - name: Activate the exact package manager toolchain
-        shell: bash
-        run: |
-          npm install --global corepack@0.35.0
-          corepack enable
-          corepack prepare yarn@4.18.0 --activate
-          test "$(node --version)" = v24.19.0
-          test "$(corepack --version)" = 0.35.0
-          test "$(yarn --version)" = 4.18.0
+        run: node scripts/ci/activate-package-manager.mjs
       - run: yarn install --immutable
       - name: Provenance and generated-source checks
         run: |
@@ -150,14 +143,7 @@ jobs:
         with:
           node-version: 24.19.0
       - name: Activate the exact package manager toolchain
-        shell: bash
-        run: |
-          npm install --global corepack@0.35.0
-          corepack enable
-          corepack prepare yarn@4.18.0 --activate
-          test "$(node --version)" = v24.19.0
-          test "$(corepack --version)" = 0.35.0
-          test "$(yarn --version)" = 4.18.0
+        run: node scripts/ci/activate-package-manager.mjs
       - run: yarn install --immutable
       - run: yarn build
       - name: Download and verify official Node archive

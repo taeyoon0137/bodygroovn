@@ -36,7 +36,7 @@ try {
         if ($_ -cmatch '^ST=') { $_ -creplace '^ST=', 'S=' } else { $_ }
     } | Sort-Object)
     $expectedSubjectParts = @('C=KR', 'CN=taeyoon0137-bodygroovn', 'O=taeyoon0137', 'S=Seoul') | Sort-Object
-    if ((Compare-Object $actualSubjectParts $expectedSubjectParts).Count -ne 0) {
+    if (@(Compare-Object $actualSubjectParts $expectedSubjectParts).Count -ne 0) {
         throw "The signing certificate subject is invalid: $($certificate.Subject)"
     }
 

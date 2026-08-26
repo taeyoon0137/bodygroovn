@@ -76,7 +76,7 @@ try {
     $actualSubjectParts = @($matchingCertificates[0].Subject -split ',\s*' | ForEach-Object {
         if ($_ -cmatch '^ST=') { $_ -creplace '^ST=', 'S=' } else { $_ }
     } | Sort-Object)
-    if ((Compare-Object $actualSubjectParts $expectedSubjectParts).Count -ne 0) {
+    if (@(Compare-Object $actualSubjectParts $expectedSubjectParts).Count -ne 0) {
         throw "The embedded signing certificate subject is invalid: $($matchingCertificates[0].Subject)"
     }
 
