@@ -34,6 +34,8 @@ describe('product and compatibility versions', () => {
     expect(renderManager).toContain('v : versionHelper.get(),')
     expect(renderManager).toContain("g: 'bodygroovn ' + versionHelper.getProductVersion()")
     expect(renderManager).toContain("sendEvent('bm:version', {value: versionHelper.getProductVersion()})")
+    expect(renderManager).toContain('app.beginUndoGroup("Render bodygroovn animation")')
+    expect(renderManager).not.toContain('Render Bodymovin Animation')
   })
 
   it('keeps CEP 12 compatibility and only the supported After Effects host surface', async () => {

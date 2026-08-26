@@ -96,12 +96,6 @@
           return this.audioFactory(assetPath);
         }
 
-        if (window.Howl) {
-          return new window.Howl({
-            src: [assetPath]
-          });
-        }
-
         return {
           isPlaying: false,
           play: function play() {

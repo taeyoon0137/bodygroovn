@@ -16,7 +16,7 @@ $.__bodymovin.bm_downloadManager = (function () {
         }
         var bmFile = new File(folder.absoluteURI + '/assets/player/' + fileName);
         
-        var uri = Folder.desktop.absoluteURI + '/lottie.js';
+        var uri = Folder.desktop.absoluteURI + '/' + fileName;
         var f = new File(uri);
         var saveFileData = f.saveDlg();
         if (saveFileData !== null) {

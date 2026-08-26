@@ -42,6 +42,7 @@ const sourceRoots = [
   'src',
   'bundle/jsx',
   'bundle/server',
+  'player',
 ]
 
 const forbiddenSourcePatterns = [
@@ -131,11 +132,8 @@ export async function checkRemovedFeatureAbsence(repositoryRoot = defaultReposit
   for (const relativePath of sourceFiles) {
     // These retained surfaces intentionally delete legacy persisted keys during migration.
     const isSettingsMigration = relativePath === 'src/redux/reducers/compositions.js'
-    // The generated local player contains upstream terms unrelated to exporter features.
-    const isGeneratedPlayer = relativePath === 'src/lottie.js'
     const contents = await readFile(path.join(repositoryRoot, relativePath), 'utf8')
 
-    if (isGeneratedPlayer) continue
     for (const { label, pattern } of forbiddenSourcePatterns) {
       if (isSettingsMigration && /Rive|AVD|SMIL|Banner/.test(label)) continue
       if (pattern.test(contents)) failures.push(`${relativePath} contains removed ${label}`)

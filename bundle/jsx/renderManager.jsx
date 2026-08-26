@@ -356,7 +356,7 @@ $.__bodymovin.bm_renderManager = (function () {
             }
 
             ////
-            app.beginUndoGroup("Render Bodymovin Animation");
+            app.beginUndoGroup("Render bodygroovn animation");
             undoGroupOpen = true;
             currentExportedComps = [];
             hasExpressionsFlag = false;
