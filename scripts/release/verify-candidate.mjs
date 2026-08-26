@@ -29,7 +29,14 @@ if (JSON.stringify(provenance.signing?.signer) !== JSON.stringify(expectedSigner
   || !/^[0-9a-f]{64}$/.test(provenance.signing?.certificateFingerprintSha256)) {
   throw new Error('Signing provenance mismatch')
 }
-if (JSON.stringify(provenance.toolchain) !== JSON.stringify({ node: '24.19.0', corepack: '0.35.0', yarn: '4.18.0' })) {
+const expectedToolchain = {
+  mise: '2026.8.14',
+  miseAction: 'c2a87611a18de5b3828c5652fe268e992400cb5c',
+  node: '24.19.0',
+  yarn: '4.18.0',
+  yarnSha256: 'fb8b1d20be72a0b544a35bcec4c7ed0ff55a9b173c01f191b02ba164b2051db5',
+}
+if (JSON.stringify(provenance.toolchain) !== JSON.stringify(expectedToolchain)) {
   throw new Error('Candidate toolchain provenance mismatch')
 }
 if (!provenance.artifacts || typeof provenance.artifacts !== 'object' || Array.isArray(provenance.artifacts)) {

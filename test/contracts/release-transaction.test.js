@@ -51,7 +51,13 @@ async function createCandidate(directory) {
       commit: 'b'.repeat(40),
       tree: 'c'.repeat(40),
     },
-    toolchain: { node: '24.19.0', corepack: '0.35.0', yarn: '4.18.0' },
+    toolchain: {
+      mise: '2026.8.14',
+      miseAction: 'c2a87611a18de5b3828c5652fe268e992400cb5c',
+      node: '24.19.0',
+      yarn: '4.18.0',
+      yarnSha256: 'fb8b1d20be72a0b544a35bcec4c7ed0ff55a9b173c01f191b02ba164b2051db5',
+    },
     signing: {
       signer: {
         sourceCommit: 'fcee8de5537d2dd2ed3d91d5a495b7041155b280',

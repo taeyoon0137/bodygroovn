@@ -41,9 +41,14 @@ jobs:
     runs-on: [self-hosted, '${{ matrix.runner }}']
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
-          node-version: 24.19.0
+          version: 2026.8.14
+          install: true
+          cache: true
+          github_token: ${{ github.token }}
+      - name: Verify the exact mise toolchain
+        run: node scripts/ci/check-toolchain.mjs
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           name: release-candidate-v6.0.0-${{ inputs.candidate_run_id }}-${{ inputs.candidate_run_attempt }}

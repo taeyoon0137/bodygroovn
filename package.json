@@ -25,7 +25,8 @@
     "check:payload": "node scripts/check-payload.mjs build/bodygroovn",
     "check:provenance": "node scripts/check-provenance.mjs",
     "check:removed": "node scripts/check-removed-features.mjs",
-    "verify": "yarn version:check && yarn check:provenance && yarn check:generated && yarn check:removed && yarn lint && yarn typecheck && yarn test && yarn test:server && yarn build"
+    "check:toolchain": "node scripts/ci/check-toolchain.mjs",
+    "verify": "yarn check:toolchain && yarn version:check && yarn check:provenance && yarn check:generated && yarn check:removed && yarn lint && yarn typecheck && yarn test && yarn test:server && yarn build"
   },
   "dependencies": {
     "aphrodite": "2.4.0",
@@ -52,7 +53,6 @@
     "@testing-library/react": "16.3.2",
     "@testing-library/user-event": "14.6.6",
     "@vitejs/plugin-react": "6.1.0",
-    "corepack": "0.35.0",
     "eslint": "9.39.5",
     "eslint-config-taeyoon": "0.2.2",
     "eslint-plugin-react": "7.37.5",

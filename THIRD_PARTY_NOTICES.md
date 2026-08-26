@@ -25,6 +25,19 @@ The JavaScript is shipped byte-exact in the ZXP. The repository-authored declara
 
 The signer is downloaded and verified only in the Windows release-signing job. It is never included in the ZXP.
 
+## mise 2026.8.14 and mise-action 4.3.0
+
+- Copyright Jeff Dickey and contributors.
+- mise source: <https://github.com/jdx/mise/tree/v2026.8.14>
+- mise version: `2026.8.14`
+- GitHub Action source: <https://github.com/jdx/mise-action/tree/c2a87611a18de5b3828c5652fe268e992400cb5c>
+- GitHub Action commit: `c2a87611a18de5b3828c5652fe268e992400cb5c` (`v4.3.0`)
+- License: MIT.
+
+mise installs the locked development and CI copies of Node and Yarn. The CLI, action, and tool archives are not included in the ZXP.
+
+The mise-managed Yarn CLI is downloaded from <https://repo.yarnpkg.com/4.18.0/packages/yarnpkg-cli/bin/yarn.js>. It is `3,784,908` bytes with SHA-256 `fb8b1d20be72a0b544a35bcec4c7ed0ff55a9b173c01f191b02ba164b2051db5` and remains subject to Yarn's BSD 2-Clause license. The CLI is a development and CI tool and is not included in the ZXP.
+
 ## react-colorful 5.8.0
 
 - Copyright Vlad Shilov and contributors.

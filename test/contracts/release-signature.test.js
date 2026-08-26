@@ -29,19 +29,39 @@ describe('release signature verification contract', () => {
     expect(packageVerifier).toContain('@(Compare-Object $actualSubjectParts $expectedSubjectParts).Count')
   })
 
-  it('bootstraps the exact package managers without replacing runner-global shims', () => {
+  it('installs the exact toolchain through pinned mise inputs', () => {
     const developWorkflow = fs.readFileSync('.github/workflows/develop-ci.yml', 'utf8')
     const candidateWorkflow = fs.readFileSync('.github/workflows/release-candidate.yml', 'utf8')
-    const bootstrap = fs.readFileSync('scripts/ci/activate-package-manager.mjs', 'utf8')
+    const validationWorkflow = fs.readFileSync('.github/workflows/ae-validation.yml', 'utf8')
+    const finalizerWorkflow = fs.readFileSync('.github/workflows/release-finalize.yml', 'utf8')
+    const workflows = `${developWorkflow}\n${candidateWorkflow}\n${validationWorkflow}\n${finalizerWorkflow}`
+    const config = fs.readFileSync('mise.toml', 'utf8')
+    const lock = fs.readFileSync('mise.lock', 'utf8')
+    const verifier = fs.readFileSync('scripts/ci/check-toolchain.mjs', 'utf8')
+    const action = 'jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c'
 
-    expect(developWorkflow.match(/node scripts\/ci\/activate-package-manager\.mjs/g)).toHaveLength(2)
-    expect(candidateWorkflow.match(/node scripts\/ci\/activate-package-manager\.mjs/g)).toHaveLength(3)
-    expect(`${developWorkflow}\n${candidateWorkflow}`).not.toContain('npm install --global corepack')
-    expect(bootstrap).toContain("const NODE_VERSION = 'v24.19.0'")
-    expect(bootstrap).toContain("const COREPACK_VERSION = '0.35.0'")
-    expect(bootstrap).toContain("const YARN_VERSION = '4.18.0'")
-    expect(bootstrap).toContain("'--global', '--prefix', toolchainRoot")
-    expect(bootstrap).toContain("requireEnvironmentPath('GITHUB_PATH')")
+    expect(developWorkflow.match(new RegExp(action, 'g'))).toHaveLength(2)
+    expect(candidateWorkflow.match(new RegExp(action, 'g'))).toHaveLength(3)
+    expect(validationWorkflow.match(new RegExp(action, 'g'))).toHaveLength(1)
+    expect(finalizerWorkflow.match(new RegExp(action, 'g'))).toHaveLength(1)
+    expect(workflows.match(/version: 2026\.8\.14/g)).toHaveLength(7)
+    expect(workflows.match(/node scripts\/ci\/check-toolchain\.mjs/g)).toHaveLength(7)
+    expect(workflows).not.toContain('actions/setup-node@')
+    expect(workflows).not.toContain('activate-package-manager.mjs')
+    expect(workflows.toLowerCase()).not.toContain('corepack')
+    expect(config).toContain('node = "24.19.0"')
+    expect(config).toContain('"aqua:yarnpkg/berry" = "4.18.0"')
+    expect(config).toContain('activate_aggressive = true')
+    for (const platform of ['linux-x64', 'macos-x64', 'macos-arm64', 'windows-x64']) {
+      expect(config).toContain(`"${platform}"`)
+      expect(lock).toContain(`platforms.${platform}`)
+    }
+    expect(verifier).toContain("mise: '2026.8.14'")
+    expect(verifier).toContain("node: '24.19.0'")
+    expect(verifier).toContain("yarn: '4.18.0'")
+    expect(verifier).toContain("const YARN_SHA256 = 'fb8b1d20be72a0b544a35bcec4c7ed0ff55a9b173c01f191b02ba164b2051db5'")
+    expect(verifier).toContain("readVersion('mise', ['which', 'yarn'])")
+    expect(verifier).toContain("readFileSync(yarnPath)")
   })
 
   it('preserves byte-exact build inputs across platform checkouts', () => {

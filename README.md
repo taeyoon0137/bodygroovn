@@ -52,24 +52,24 @@ The package is signed by the project's fixed self-signed publisher certificate. 
 
 ### Requirements
 
-- Node `24.19.0`
-- Corepack `0.35.0`
-- Yarn `4.18.0`
+- mise `2026.8.14`
+- Node `24.19.0` and Yarn `4.18.0`, installed through mise
 - After Effects 2025 or 2026 with CEP 12 for host testing
 
 ```sh
-corepack enable
-yarn install --immutable
+mise install --locked
+mise exec -- node scripts/ci/check-toolchain.mjs
+mise exec -- yarn install --immutable
 ```
 
-The repository uses Yarn's `node-modules` linker and commits `yarn.lock`. Every CI and release install is immutable. Do not generate `package-lock.json`.
+The repository commits `mise.lock` for Linux x64, macOS x64/arm64, and Windows x64. The project config keeps mise's selected tools first in `PATH`, so existing Node managers cannot override the pinned runtime. The toolchain check verifies the downloaded Yarn CLI against SHA-256 `fb8b1d20be72a0b544a35bcec4c7ed0ff55a9b173c01f191b02ba164b2051db5` before executing it. Yarn uses the `node-modules` linker and commits `yarn.lock`. Every CI and release install uses the locked mise toolchain and immutable Yarn dependencies. Do not run Corepack or generate `package-lock.json`.
 
 ### Run the development panel
 
 Install or link `bundle/` into the Adobe CEP extensions directory under the folder name `bodygroovn`, then run:
 
 ```sh
-yarn start
+mise exec -- yarn start
 ```
 
 The development manifest opens `http://127.0.0.1:3000/`. After changing ExtendScript, the manifest, or the Node server, close and reopen the panel or reload it from CEP developer tools; the Vite server cannot reload the After Effects host process for you.
@@ -77,11 +77,11 @@ The development manifest opens `http://127.0.0.1:3000/`. After changing ExtendSc
 ### Build and verify
 
 ```sh
-yarn lint
-yarn typecheck
-yarn test
-yarn build
-yarn verify
+mise exec -- yarn lint
+mise exec -- yarn typecheck
+mise exec -- yarn test
+mise exec -- yarn build
+mise exec -- yarn verify
 ```
 
 `yarn build` creates the production extension payload at `build/bodygroovn`. It generates the preview player import, bundles the panel and Node 17 server/worker, writes the production manifest, and creates exactly four player payload files: `lottie.js`, `lottie.js.gz`, `standalone.js`, and `demo.html`.
@@ -89,10 +89,10 @@ yarn verify
 Useful focused checks:
 
 ```sh
-yarn version:check
-yarn check:provenance
-yarn test:server
-yarn check:payload
+mise exec -- yarn version:check
+mise exec -- yarn check:provenance
+mise exec -- yarn test:server
+mise exec -- yarn check:payload
 ```
 
 Local builds are unsigned. Production ZXP packaging and timestamped signing occur only in the protected GitHub release workflow. Do not distribute the raw payload directory as a release archive.
@@ -105,6 +105,8 @@ Local builds are unsigned. Production ZXP packaging and timestamped signing occu
 ├── .github/workflows/   CI, candidate, AE validation, and release finalization
 ├── bundle/              CEP manifest, ExtendScript, assets, and Node server sources
 ├── lib/CSInterface/     Byte-exact Adobe bridge, declarations, and provenance
+├── mise.toml            Pinned Node and Yarn tool declarations
+├── mise.lock            Cross-platform locked tool download metadata
 ├── player/              Fixed lottie-web source and minified player inputs
 ├── scripts/             Build, version, provenance, payload, QA, and release tools
 ├── src/                 React 19 panel application
@@ -115,13 +117,13 @@ Generated-file and compatibility invariants are documented in [AGENTS.md](AGENTS
 
 ## Version contract
 
-`package.json.version` is the product-version source of truth. `yarn version:sync` records it in the product version helper and the two CEP bundle/extension version attributes; `yarn version:check` fails on drift without editing files.
+`package.json.version` is the product-version source of truth. `mise exec -- yarn version:sync` records it in the product version helper and the two CEP bundle/extension version attributes; `mise exec -- yarn version:check` fails on drift without editing files.
 
 The product UI and `bm:version` show the product version. Lottie animation JSON `v`, animation report `version`, and `compatibilityVersion` intentionally remain `5.12.0`. Each animation JSON adds `meta.g: "bodygroovn <product version>"` without changing its Lottie compatibility version.
 
 ## Release flow
 
-1. Develop on `develop` with a pending Changeset and pass immutable CI.
+1. Develop on `develop` with a pending Changeset and pass locked-mise, immutable-Yarn CI.
 2. Merge the reviewed tree to `main`.
 3. The candidate workflow applies the Changeset locally, synchronizes version surfaces, creates the single English release commit, builds/tests it, signs the ZXP on Windows, verifies the signature and exact SHA sidecar bytes, preserves a Git bundle, and uploads an immutable internal candidate artifact.
 4. Validate the same candidate ZXP on Windows and macOS with After Effects 2025 and 2026. Automated logs and a human UI check must record OS, exact After Effects version/build, candidate run/attempt, and ZXP SHA.

@@ -18,11 +18,14 @@ jobs:
       mode: ${{ steps.release.outputs.mode }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
-          node-version: 24.19.0
-      - name: Activate the exact package manager toolchain
-        run: node scripts/ci/activate-package-manager.mjs
+          version: 2026.8.14
+          install: true
+          cache: true
+          github_token: ${{ github.token }}
+      - name: Verify the exact mise toolchain
+        run: node scripts/ci/check-toolchain.mjs
       - run: yarn install --immutable
       - id: release
         name: Classify pending Changesets
@@ -36,11 +39,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
-          node-version: 24.19.0
-      - name: Activate the exact package manager toolchain
-        run: node scripts/ci/activate-package-manager.mjs
+          version: 2026.8.14
+          install: true
+          cache: true
+          github_token: ${{ github.token }}
+      - name: Verify the exact mise toolchain
+        run: node scripts/ci/check-toolchain.mjs
       - run: yarn install --immutable
       - name: Verify without creating a release
         run: |
@@ -68,11 +74,14 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
-          node-version: 24.19.0
-      - name: Activate the exact package manager toolchain
-        run: node scripts/ci/activate-package-manager.mjs
+          version: 2026.8.14
+          install: true
+          cache: true
+          github_token: ${{ github.token }}
+      - name: Verify the exact mise toolchain
+        run: node scripts/ci/check-toolchain.mjs
       - run: yarn install --immutable
       - name: Require a clean main checkout
         run: |

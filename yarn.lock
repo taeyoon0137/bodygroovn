@@ -806,7 +806,6 @@ __metadata:
     "@testing-library/user-event": "npm:14.6.6"
     "@vitejs/plugin-react": "npm:6.1.0"
     aphrodite: "npm:2.4.0"
-    corepack: "npm:0.35.0"
     deepmerge: "npm:4.3.1"
     escodegen: "npm:2.1.0"
     eslint: "npm:9.39.5"
@@ -1627,22 +1626,6 @@ __metadata:
   version: 2.0.0
   resolution: "convert-source-map@npm:2.0.0"
   checksum: 10c0/8f2f7a27a1a011cc6cc88cc4da2d7d0cfa5ee0369508baae3d98c260bb3ac520691464e5bbe4ae7cdf09860c1d69ecc6f70c63c6e7c7f7e3f18ec08484dc7d9b
-  languageName: node
-  linkType: hard
-
-"corepack@npm:0.35.0":
-  version: 0.35.0
-  resolution: "corepack@npm:0.35.0"
-  dependenciesMeta:
-    esbuild:
-      built: true
-  bin:
-    corepack: ./dist/corepack.js
-    pnpm: ./dist/pnpm.js
-    pnpx: ./dist/pnpx.js
-    yarn: ./dist/yarn.js
-    yarnpkg: ./dist/yarnpkg.js
-  checksum: 10c0/4ca68897224379cc3bdd6ff8adb36d7ce465b0fe8be3da5eadebb3c6cf3449bc5bceba61d103a3b31d4264df7103942aacd16b4504f6dcf8e36d4dbb5d5c978b
   languageName: node
   linkType: hard
 
