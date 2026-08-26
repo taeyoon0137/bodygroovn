@@ -87,4 +87,62 @@ describe('ColorPicker', () => {
     expect(onChangeComplete).toHaveBeenCalledOnce()
     expect(onChangeComplete.mock.calls[0][0]).toMatch(/^#[0-9a-f]{6}$/)
   })
+
+  it('keeps hue pointer changes local until the pointer interaction ends', () => {
+    const onChange = vi.fn()
+    const onChangeComplete = vi.fn()
+    const view = render(
+      <ColorPicker
+        color="#112233"
+        onChange={onChange}
+        onChangeComplete={onChangeComplete}
+      />,
+    )
+    const hue = view.getByRole('slider', { name: 'Hue' })
+    vi.spyOn(hue, 'getBoundingClientRect').mockReturnValue({
+      bottom: 20,
+      height: 20,
+      left: 0,
+      right: 100,
+      top: 0,
+      width: 100,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    })
+
+    fireEvent.mouseDown(hue, { buttons: 1, pageX: 75, pageY: 10 })
+
+    expect(onChange).toHaveBeenCalledOnce()
+    expect(onChange.mock.calls[0][0]).toMatch(/^#[0-9a-f]{6}$/)
+    expect(onChange.mock.calls[0][0]).not.toBe('#112233')
+    expect(onChangeComplete).not.toHaveBeenCalled()
+
+    fireEvent.mouseUp(window)
+    expect(onChangeComplete).toHaveBeenCalledOnce()
+    expect(onChangeComplete).toHaveBeenCalledWith(onChange.mock.calls[0][0])
+  })
+
+  it('commits hue keyboard adjustments only at keyup', () => {
+    const onChange = vi.fn()
+    const onChangeComplete = vi.fn()
+    const view = render(
+      <ColorPicker
+        color="#112233"
+        onChange={onChange}
+        onChangeComplete={onChangeComplete}
+      />,
+    )
+    const hue = view.getByRole('slider', { name: 'Hue' })
+
+    fireEvent.keyDown(hue, { key: 'ArrowRight', keyCode: 39, which: 39 })
+
+    expect(onChange).toHaveBeenCalledOnce()
+    expect(onChange.mock.calls[0][0]).not.toBe('#112233')
+    expect(onChangeComplete).not.toHaveBeenCalled()
+
+    fireEvent.keyUp(hue, { key: 'ArrowRight', keyCode: 39, which: 39 })
+    expect(onChangeComplete).toHaveBeenCalledOnce()
+    expect(onChangeComplete).toHaveBeenCalledWith(onChange.mock.calls[0][0])
+  })
 })

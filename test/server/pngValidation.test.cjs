@@ -7,6 +7,7 @@ const test = require('node:test');
 
 const UPNG = require('upng-js');
 
+const { createServer } = require('../../bundle/server/main');
 const { crc32, inspectPng, processPng } = require('../../bundle/server/pngWorker');
 const limits = { imagePixels: 64 * 1024 * 1024, imageDecoded: 1024 * 1024 * 1024 };
 
@@ -52,6 +53,17 @@ function addTextChunk(buffer, size) {
     chunk('tEXt', Buffer.alloc(size, 65)),
     buffer.subarray(iendOffset),
   ]);
+}
+
+function countDecodedColors(buffer) {
+  const input = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
+  const decoded = UPNG.decode(input);
+  const rgba = new Uint8Array(UPNG.toRGBA8(decoded)[0]);
+  const colors = new Set();
+  for (let index = 0; index < rgba.length; index += 4) {
+    colors.add(`${rgba[index]},${rgba[index + 1]},${rgba[index + 2]},${rgba[index + 3]}`);
+  }
+  return colors.size;
 }
 
 test('validates PNG chunks, CRC, IEND, limits, and preserved variants', () => {
@@ -117,6 +129,51 @@ test('atomically replaces a static PNG only when palette encoding is smaller', a
     animated: false,
   });
   assert.deepEqual((await fs.promises.readdir(root)).filter((name) => name.endsWith('.tmp')), []);
+});
+
+test('processes every supported palette through the real worker and keeps zero as a no-op', async (t) => {
+  const root = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bodygroovn-png-palettes-'));
+  const controller = await createServer({ tempRoot: root });
+  const connection = controller.getConnection();
+  t.after(async () => {
+    await controller.close();
+    await fs.promises.rm(root, { recursive: true, force: true });
+  });
+
+  for (const paletteColors of [0, 32, 64, 128, 256]) {
+    const pathname = path.join(root, `palette-${paletteColors}.png`);
+    const original = addTextChunk(staticPng(), 4096);
+    await fs.promises.writeFile(pathname, original);
+    const response = await fetch(`http://127.0.0.1:${connection.port}/processImage`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Bodygroovn-Token': connection.token,
+      },
+      body: JSON.stringify({ path: encodeURIComponent(pathname), paletteColors }),
+    });
+    const payload = await response.json();
+    const processed = await fs.promises.readFile(pathname);
+
+    assert.equal(response.status, 200, JSON.stringify({ paletteColors, payload }));
+    assert.equal(payload.ok, true);
+    assert.equal(payload.data.changed, paletteColors !== 0);
+    assert.deepEqual(payload.data.warnings, []);
+
+    if (paletteColors === 0) {
+      assert.deepEqual(processed, original);
+    } else {
+      assert.ok(processed.length < original.length, `${paletteColors} colors should reduce the PNG size`);
+      assert.ok(countDecodedColors(processed) <= paletteColors, `${paletteColors} colors should cap the decoded palette`);
+      assert.deepEqual(inspectPng(processed, limits), {
+        width: 64,
+        height: 64,
+        bitDepth: 8,
+        interlace: 0,
+        animated: false,
+      });
+    }
+  }
 });
 
 test('cleans up its sibling temporary file when atomic replacement fails', async (t) => {
