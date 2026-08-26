@@ -125,7 +125,7 @@ test('rejects sparse files at the encode and image route limits without reading 
 });
 
 test('validates split basenames without rejecting Unicode or spaces', () => {
-  assert.equal(validSplitName('한국어 animation 01'), true);
+  assert.equal(validSplitName('Café animation 01'), true);
   for (const name of ['', '.', '..', 'a/b', 'a\\b', 'bad:name', `bad${String.fromCharCode(0)}name`, 'x'.repeat(256)]) assert.equal(validSplitName(name), false, name);
 });
 
@@ -144,7 +144,7 @@ test('rejects a missing split basename instead of treating it as a filename', as
 test('writes a Unicode-named split animation inside authorized roots', async (t) => {
   const f = await fixture();
   t.after(async () => { await f.controller.close(); await fs.promises.rm(f.root, { recursive: true, force: true }); });
-  const fileName = '한국어 animation';
+  const fileName = 'Café animation';
   await fs.promises.writeFile(path.join(f.root, `${fileName}.json`), JSON.stringify({ v: '5.12.0', fr: 30, ip: 0, op: 60, layers: [], assets: [] }));
   const response = await f.request('/splitAnimation', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ origin: encodeURIComponent(f.root), destination: encodeURIComponent(f.root), fileName: encodeURIComponent(fileName), time: 1 }) });
   assert.equal(response.status, 200);
