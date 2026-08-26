@@ -219,4 +219,16 @@ describe('render manager completion accounting', () => {
       2,
     ])
   })
+
+  it('alerts and aborts the active render when expression processing fails', () => {
+    const harness = createHarness({includeReport: false})
+    harness.render(3)
+
+    harness.bodymovin.bm_renderManager.expressionProcessingFailed(1)
+
+    expect(harness.renderComplete).toHaveBeenCalledOnce()
+    expect(harness.events).toContainEqual(['bm:alert', {
+      message: 'Could not process an expression because its response was malformed.',
+    }])
+  })
 })

@@ -23,7 +23,25 @@
         var path = node.require('path');
         var fs = node.require('fs');
         var serverModule = node.require(path.join(extensionRoot, 'server', 'main.js'));
-        var controllerPromise = Promise.resolve().then(function () { return serverModule.createServer(); });
+        var lastExportDestination = null;
+        function createController() {
+          return Promise.resolve(serverModule.createServer()).then(function (controller) {
+            if (lastExportDestination === null) {
+              return controller;
+            }
+            return Promise.resolve(controller.setExportDestination(lastExportDestination))
+              .then(
+                function () { return controller; },
+                function (error) {
+                  return Promise.resolve(controller.close()).then(
+                    function () { throw error; },
+                    function () { throw error; }
+                  );
+                }
+              );
+          });
+        }
+        var controllerPromise = Promise.resolve().then(createController);
         var restartPromise = null;
 
         function getConnection() {
@@ -34,7 +52,7 @@
           if (!restartPromise) {
             controllerPromise = controllerPromise
               .then(function (controller) { return controller.close(); }, function () {})
-              .then(function () { return serverModule.createServer(); });
+              .then(createController);
             restartPromise = controllerPromise.then(function (controller) { return controller.getConnection(); });
             restartPromise.then(
               function () { restartPromise = null; },
@@ -48,7 +66,14 @@
           getConnection: getConnection,
           restart: restart,
           readFileSync: function (filePath) { return fs.readFileSync(filePath); },
-          setExportDestination: function (filePath) { return controllerPromise.then(function (controller) { return controller.setExportDestination(filePath); }); },
+          setExportDestination: function (filePath) {
+            return controllerPromise.then(function (controller) {
+              return Promise.resolve(controller.setExportDestination(filePath)).then(function (result) {
+                lastExportDestination = filePath;
+                return result;
+              });
+            });
+          },
           statSync: function (filePath) { return fs.statSync(filePath); },
           writeArrayBuffer: function (filePath, value, callback) { return fs.writeFile(filePath, node.Buffer.from(value), callback); },
           writeFile: function () { return fs.writeFile.apply(fs, arguments); },

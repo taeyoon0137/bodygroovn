@@ -51,10 +51,11 @@ $.__bodymovin.bm_expressionHelper = (function () {
         return false;
     }
 
-    function saveExpression(expressionData, id) {
+    function saveExpression(expressionData, id, generation) {
         var i = 0, len = renderingExpressions.length, didFindExpression = false;
         for (i = 0; i < len; i += 1) {
-            if (renderingExpressions[i].id === id) {
+            if (renderingExpressions[i].id === id
+                && renderingExpressions[i].render_generation === generation) {
                 didFindExpression = true;
                 var keyframeOb = renderingExpressions[i].ob;
                 if (expressionData.isStatic) {
@@ -69,6 +70,8 @@ $.__bodymovin.bm_expressionHelper = (function () {
         }
         if (didFindExpression && renderingExpressions.length === 0) {
             onEnd();
+        } else if (!didFindExpression) {
+            $.__bodymovin.bm_renderManager.expressionProcessingFailed(generation);
         }
     }
 

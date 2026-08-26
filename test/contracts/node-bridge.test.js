@@ -46,6 +46,7 @@ describe('CEP Node bridge boundary', () => {
     expect(bridgeScript).toBeTruthy()
 
     const controllers = []
+    let rejectNextRegistration = false
     const createServer = vi.fn(async() => {
       const id = controllers.length + 1
       const controller = {
@@ -54,7 +55,13 @@ describe('CEP Node bridge boundary', () => {
           port: 3000 + id,
           token: id.toString(16).padStart(64, '0'),
         })),
-        setExportDestination: vi.fn(async value => value),
+        setExportDestination: vi.fn(async value => {
+          if (rejectNextRegistration) {
+            rejectNextRegistration = false
+            throw new Error('restore failed')
+          }
+          return value
+        }),
       }
       controllers.push(controller)
       return controller
@@ -93,11 +100,32 @@ describe('CEP Node bridge boundary', () => {
     expect(await bridge.getConnection()).toEqual({ port: 3001, token: '1'.padStart(64, '0') })
     expect(cepRequire).toHaveBeenCalledWith('/bodygroovn/server/main.js')
 
+    await bridge.setExportDestination('/exports/first.json')
+    expect(controllers[0].setExportDestination).toHaveBeenCalledWith('/exports/first.json')
+
     const restarted = await bridge.restart()
     expect(restarted).toEqual({ port: 3002, token: '2'.padStart(64, '0') })
     expect(controllers[0].close).toHaveBeenCalledOnce()
+    expect(controllers[1].setExportDestination).toHaveBeenCalledWith('/exports/first.json')
     expect(createServer).toHaveBeenCalledTimes(2)
     expect(await bridge.getConnection()).toEqual(restarted)
+
+    await bridge.setExportDestination('/exports/second.json')
+    await bridge.restart()
+    expect(controllers[2].setExportDestination).toHaveBeenCalledWith('/exports/second.json')
+
+    controllers[2].setExportDestination.mockRejectedValueOnce(new Error('registration failed'))
+    await expect(bridge.setExportDestination('/exports/rejected.json')).rejects.toThrow('registration failed')
+    await bridge.restart()
+    expect(controllers[3].setExportDestination).toHaveBeenCalledWith('/exports/second.json')
+
+    rejectNextRegistration = true
+    await expect(bridge.restart()).rejects.toThrow('restore failed')
+    expect(controllers[4].close).toHaveBeenCalledOnce()
+
+    const recovered = await bridge.restart()
+    expect(recovered).toEqual({ port: 3006, token: '6'.padStart(64, '0') })
+    expect(controllers[5].setExportDestination).toHaveBeenCalledWith('/exports/second.json')
   })
 
   it('restarts the bridge after a ping failure', async () => {

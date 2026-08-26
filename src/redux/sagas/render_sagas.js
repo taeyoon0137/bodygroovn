@@ -21,7 +21,7 @@ function *searchStoredFonts(action) {
 			const missingFont = storedFonts.some(fontData => fontData.data === null);
 			if (!missingFont) {
 				const fontsData = storedFonts.map(font => font.data);
-				setFonts(fontsData);
+				yield call(setFonts, fontsData, action.data.render_generation);
 				return;
 			}
 		}
@@ -33,7 +33,7 @@ function *searchStoredFonts(action) {
 	}
 }
 
-function *handleRenderFonts(action) {
+export function *handleRenderFonts(action) {
 	if (!action.data.bundleFonts) {
 		yield call(searchStoredFonts, action)
 	} else {
@@ -45,31 +45,32 @@ function *handleRenderFonts(action) {
 			}
 		})
 		if (action.data.inlineFonts) {
-			const inlines = action.data.fonts.map(async function(font, index) {
-				let fontData
-				try {
-					fontData = await getEncodedFile(font.originalLocation)
-				} catch(err) {
-					fontData = ''
-				}
-				return fontData
-			})
-			const files = yield all(inlines)
-			fontsInfo = fontsInfo.map((font, index) => {
-				return {
-					...font,
-					fPath: files[index],
-				}
-			})
+			try {
+				const inlines = action.data.fonts.map(font => call(getEncodedFile, font.originalLocation))
+				const files = yield all(inlines)
+				fontsInfo = fontsInfo.map((font, index) => {
+					return {
+						...font,
+						fPath: files[index],
+					}
+				})
+			} catch (err) {
+				const message = err && err.message
+					? 'Could not encode a bundled font: ' + err.message
+					: 'Could not encode a bundled font.'
+				yield call(imageProcessingFailed, message, action.data.render_generation)
+				return
+			}
 		}
-		setFonts(fontsInfo)
+		yield call(setFonts, fontsInfo, action.data.render_generation)
 	}
 }
 
 function *saveFonts() {
 	try{
 		let fontsInfo = yield select(setFontsSelector)
-		setFonts(fontsInfo)
+		const generation = yield select(state => state.render.renderGeneration)
+		yield call(setFonts, fontsInfo, generation)
 		fontsInfo.forEach(font => {
 			saveFontsFromLocalStorage(font);
 		})
@@ -111,9 +112,9 @@ function *processImage(action) {
 function *processExpression(action) {
 	try {
 		const expressionData = yield call(expressionProcessor, action.data.text);
-		yield call(expressionProcessed, action.data.id, expressionData);
+		yield call(expressionProcessed, action.data.id, expressionData, action.data.render_generation);
 	} catch (err) {
-		yield call(expressionProcessed, action.data.id, {hasFailed: true});
+		yield call(expressionProcessed, action.data.id, {hasFailed: true}, action.data.render_generation);
 	}
 }
 

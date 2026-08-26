@@ -126,9 +126,11 @@ describe('render generation isolation', () => {
     const events = []
     const oldEnd = vi.fn()
     const newEnd = vi.fn()
+    const expressionProcessingFailed = vi.fn()
     const bodymovin = {
       bm_eventDispatcher: {sendEvent: (...args) => events.push(args)},
       bm_generalUtils: {random: () => 'expression-a'},
+      bm_renderManager: {expressionProcessingFailed},
       bm_settingsHelper: {},
     }
     const source = fs.readFileSync('bundle/jsx/utils/expressionHelper.jsx', 'utf8')
@@ -141,9 +143,44 @@ describe('render generation isolation', () => {
 
     helper.setCallbacks(vi.fn(), newEnd)
     helper.reset(2)
-    helper.saveExpression({text: '0'}, 'expression-a')
+    helper.checkExpression({expression: 'value + 1', expressionEnabled: true, expressionError: false}, {})
+    expect(events[1][1]).toMatchObject({id: 'expression-a', render_generation: 2})
+
+    helper.saveExpression({text: '0'}, 'expression-a', 1)
 
     expect(oldEnd).not.toHaveBeenCalled()
     expect(newEnd).not.toHaveBeenCalled()
+    expect(expressionProcessingFailed).toHaveBeenCalledWith(1)
+    expect(helper.checkReady()).toBe(false)
+
+    helper.saveExpression({text: '1'}, 'expression-a', 2)
+    expect(newEnd).toHaveBeenCalledOnce()
+    expect(helper.checkReady()).toBe(true)
+  })
+
+  it('drains only an outstanding expression ID and rejects an unknown ID', () => {
+    const expressionProcessingFailed = vi.fn()
+    const onEnd = vi.fn()
+    const bodymovin = {
+      bm_eventDispatcher: {sendEvent: vi.fn()},
+      bm_generalUtils: {random: () => 'expression-a'},
+      bm_renderManager: {expressionProcessingFailed},
+      bm_settingsHelper: {},
+    }
+    const source = fs.readFileSync('bundle/jsx/utils/expressionHelper.jsx', 'utf8')
+    vm.runInNewContext(source, {$: {__bodymovin: bodymovin}})
+    const helper = bodymovin.bm_expressionHelper
+    helper.setCallbacks(vi.fn(), onEnd)
+    helper.reset(9)
+    helper.checkExpression({expression: 'time', expressionEnabled: true, expressionError: false}, {})
+
+    helper.saveExpression({hasFailed: true}, 'expression-unknown', 9)
+    expect(expressionProcessingFailed).toHaveBeenCalledWith(9)
+    expect(helper.checkReady()).toBe(false)
+    expect(onEnd).not.toHaveBeenCalled()
+
+    helper.saveExpression({hasFailed: true}, 'expression-a', 9)
+    expect(helper.checkReady()).toBe(true)
+    expect(onEnd).toHaveBeenCalledOnce()
   })
 })

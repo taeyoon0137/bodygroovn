@@ -240,7 +240,7 @@ csInterface.addEventListener('bm:expression:process', async function (ev) {
 		}
 	} catch(err) {
 		if (data && typeof data.id === 'string' && data.id) {
-			expressionProcessed(data.id, {hasFailed: true})
+			expressionProcessed(data.id, {hasFailed: true}, data.render_generation)
 		} else {
 			const generation = data && Number.isInteger(data.render_generation)
 				? data.render_generation
@@ -311,15 +311,14 @@ function getDestinationPath(comp, alternatePath, shouldUseCompNameAsDefault) {
 	return prom
 }
 
-function renderNextComposition(comp) {
-	extensionLoader.then(function(){
-		var eScript = '$.__bodymovin.bm_compsManager.renderComposition(' + JSON.stringify(comp) + ')'
-		csInterface.evalScript(eScript)
-	})
-	let prom = new Promise(function(resolve, reject){
-		resolve()
-	})
-	return prom
+async function renderNextComposition(comp) {
+	if (!window.__bodygroovnNodeBridge) {
+		throw new Error('The bodygroovn Node bridge is not available.');
+	}
+	await window.__bodygroovnNodeBridge.setExportDestination(comp.destination)
+	await extensionLoader
+	var eScript = '$.__bodymovin.bm_compsManager.renderComposition(' + JSON.stringify(comp) + ')'
+	csInterface.evalScript(eScript)
 }
 
 function stopRenderCompositions() {
@@ -333,14 +332,15 @@ function stopRenderCompositions() {
 	return prom
 }
 
-function setFonts(fontsInfo) {
+function setFonts(fontsInfo, generation) {
 	let prom = new Promise(function(resolve, reject){
 		resolve()
 	})
 	var fontsInfoString = JSON.stringify({list:fontsInfo})
+	var renderGeneration = Number.isInteger(generation) ? generation : 'undefined'
 
 	extensionLoader.then(function(){
-	    var eScript = '$.__bodymovin.bm_renderManager.setFontData(' + fontsInfoString + ')'
+	    var eScript = '$.__bodymovin.bm_renderManager.setFontData(' + fontsInfoString + ',' + renderGeneration + ')'
 	    csInterface.evalScript(eScript)
 	})
 	return prom
@@ -452,10 +452,10 @@ async function setCompositionTimelinePosition(progress) {
 	
 }
 
-function expressionProcessed(id, data) {
+function expressionProcessed(id, data, generation) {
 	sendAsyncCommand(
 		'$.__bodymovin.bm_expressionHelper.saveExpression',
-		[data, id],
+		[data, id, generation],
 	)
 }
 

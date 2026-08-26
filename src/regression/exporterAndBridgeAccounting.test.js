@@ -38,7 +38,7 @@ vi.mock('../redux/actions/renderActions', () => ({
 vi.mock('../helpers/splitAnimationHelper', () => ({splitAnimation: vi.fn()}))
 vi.mock('../helpers/osHelper', () => ({getSimpleSeparator: () => '/'}))
 
-await import('../helpers/CompositionsProvider')
+const compositionsProvider = await import('../helpers/CompositionsProvider')
 
 function loadExporter(fileName, exportType, fileOverrides = {}) {
   const source = fs.readFileSync(`bundle/jsx/exporters/${fileName}Exporter.jsx`, 'utf8')
@@ -101,6 +101,9 @@ beforeEach(() => {
   bridge.actions.length = 0
   bridge.evalScripts.length = 0
   bridge.sentCommands.length = 0
+  window.__bodygroovnNodeBridge = {
+    setExportDestination: vi.fn(async destination => destination),
+  }
 })
 
 describe('retained exporter contracts', () => {
@@ -177,13 +180,39 @@ describe('retained exporter contracts', () => {
 })
 
 describe('CEP bridge failure accounting', () => {
-  it('drains a failed expression when its request has a known ID', async () => {
-    await bridge.listeners.get('bm:expression:process')({data: {id: 'expression-1'}})
+  it('delegates a nonempty malformed expression ID to the outstanding-request tracker', async () => {
+    await bridge.listeners.get('bm:expression:process')({
+      data: {id: 'expression-1', render_generation: 8},
+    })
 
     expect(bridge.sentCommands).toEqual([[
       '$.__bodymovin.bm_expressionHelper.saveExpression',
-      [{hasFailed: true}, 'expression-1'],
+      [{hasFailed: true}, 'expression-1', 8],
     ]])
+  })
+
+  it('registers the current destination before starting every render', async () => {
+    const comp = {destination: '/exports/current.json', id: 7}
+    window.__bodygroovnNodeBridge.setExportDestination.mockImplementation(async destination => {
+      expect(destination).toBe(comp.destination)
+      expect(bridge.evalScripts).toEqual([])
+    })
+
+    await compositionsProvider.renderNextComposition(comp)
+
+    expect(window.__bodygroovnNodeBridge.setExportDestination).toHaveBeenCalledWith(comp.destination)
+    expect(bridge.evalScripts).toEqual([
+      '$.__bodymovin.bm_compsManager.renderComposition(' + JSON.stringify(comp) + ')',
+    ])
+  })
+
+  it('scopes font completion to the render generation that requested it', async () => {
+    compositionsProvider.setFonts([{fName: 'Inter-Regular'}], 12)
+    await Promise.resolve()
+
+    expect(bridge.evalScripts).toEqual([
+      '$.__bodymovin.bm_renderManager.setFontData({"list":[{"fName":"Inter-Regular"}]},12)',
+    ])
   })
 
   it('aborts the current render when an expression request has no ID', async () => {

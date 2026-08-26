@@ -784,6 +784,7 @@ $.__bodymovin.bm_renderManager = (function () {
                         fonts: fonts,
                         bundleFonts: settingsHelper.shouldBundleFonts(),
                         inlineFonts: settingsHelper.shouldInlineFonts(),
+                        render_generation: activeRenderGeneration,
                     });
             }
         }

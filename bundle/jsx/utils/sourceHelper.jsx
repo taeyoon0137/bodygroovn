@@ -765,14 +765,18 @@ $.__bodymovin.bm_sourceHelper = (function () {
         if (fontLocation && settingsHelper.shouldBundleFonts()) {
             var file = new File(fontLocation)
             if (file.exists) {
-                if (!settingsHelper.shouldInlineFonts()) {
-                    var fontFileName = 'font_' + fontCount++;
-                    var destinationFileData = bm_fileManager.createFile(fontFileName, ['raw','images']);
-                    var destinationFile = destinationFileData.file;
-                    file.copy(destinationFile.fsName);
+                var fontFileName = 'font_' + fontCount++;
+                var shouldInlineFont = settingsHelper.shouldInlineFonts();
+                var fontStagingPath = shouldInlineFont ? ['staging', 'fonts'] : ['raw', 'images'];
+                var destinationFileData = bm_fileManager.createFile(fontFileName, fontStagingPath);
+                var destinationFile = destinationFileData.file;
+                if (file.copy(destinationFile.fsName) === false) {
+                    throw new Error('Could not copy bundled font to the temporary export folder: ' + fontLocation);
+                }
+                if (!shouldInlineFont) {
                     fontData.location = "images/" + fontFileName;
                 }
-                fontData.originalLocation = fontLocation;
+                fontData.originalLocation = destinationFile.fsName;
             }
         }
         fonts.push(fontData);

@@ -7,6 +7,7 @@ let initialState = {
   cancelled: false,
   bundleFonts: false,
   inlineFonts: false,
+  renderGeneration: null,
   fonts: []
 }
 
@@ -45,6 +46,9 @@ function updateFontsData(state, action) {
     ...{fonts: fonts},
     bundleFonts: action.data.bundleFonts,
     inlineFonts: action.data.inlineFonts,
+    renderGeneration: Number.isInteger(action.data.render_generation)
+      ? action.data.render_generation
+      : null,
   }
   return newState
 }
