@@ -47,7 +47,6 @@ $.__bodymovin.bm_layerReport = (function () {
             || (this.layer.guideLayer && settingsHelper.shouldIncludeGuidedLayers())) {
             this.addMessage(messageTypes.WARNING,
             [
-                rendererTypes.SKOTTIE,
                 rendererTypes.IOS,
                 rendererTypes.ANDROID,
             ],
@@ -66,7 +65,6 @@ $.__bodymovin.bm_layerReport = (function () {
             this.addMessage(messageTypes.WARNING,
             [
                 rendererTypes.BROWSER,
-                rendererTypes.SKOTTIE,
                 rendererTypes.IOS,
                 rendererTypes.ANDROID,
             ],
@@ -75,7 +73,6 @@ $.__bodymovin.bm_layerReport = (function () {
         if (this.layer.threeDLayer) {
             this.addMessage(messageTypes.ERROR,
             [
-                rendererTypes.SKOTTIE,
                 rendererTypes.IOS,
                 rendererTypes.ANDROID,
             ],
@@ -94,7 +91,6 @@ $.__bodymovin.bm_layerReport = (function () {
                 this.addMessage(messageTypes.WARNING,
                 [
                     rendererTypes.BROWSER,
-                    rendererTypes.SKOTTIE,
                     rendererTypes.IOS,
                     rendererTypes.ANDROID,
                 ],
@@ -119,7 +115,6 @@ $.__bodymovin.bm_layerReport = (function () {
                 this.addMessage(messageTypes.WARNING,
                 [
                     rendererTypes.BROWSER,
-                    rendererTypes.SKOTTIE,
                     rendererTypes.IOS,
                     rendererTypes.ANDROID,
                 ],

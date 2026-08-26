@@ -10,9 +10,19 @@ $.__bodymovin.bm_demoExporter = (function () {
 	var ob = {}
 	var _callback;
 
+	function finish(status) {
+		if (_callback) {
+			var callback = _callback;
+			_callback = null;
+			callback(exporterHelpers.exportTypes.DEMO, status);
+		}
+	}
+
 	function save(destinationPath, config, callback, data) {
 
 		_callback = callback;
+		var savedAssets = [];
+		try {
 
 		if (config.export_modes.demo) {
 
@@ -20,7 +30,7 @@ $.__bodymovin.bm_demoExporter = (function () {
 
 			var rawFiles = bm_fileManager.getFilesOnPath(['raw']);
 
-			exporterHelpers.saveAssets(rawFiles, destinationData.folder)
+			savedAssets = exporterHelpers.saveAssets(rawFiles, destinationData.folder)
 
 	        // var fullFilePathName = destinationPath.substr(destinationPath.lastIndexOf('/') + 1);
 
@@ -39,17 +49,19 @@ $.__bodymovin.bm_demoExporter = (function () {
 
 			var demoDestinationFile = new File(destinationData.folder.fsName);
 			demoDestinationFile.changePath(destinationData.fileName + '.html');
-			demoDestinationFile.open('w', 'TEXT', '????');
-			demoDestinationFile.encoding = 'UTF-8';
 			try {
-			    demoDestinationFile.write(demoStr); //DO NOT ERASE, JSON UNFORMATTED
-			    demoDestinationFile.close();
-			    _callback(exporterHelpers.exportTypes.DEMO, exporterHelpers.exportStatuses.SUCCESS);
+			    exporterHelpers.writeTextFile(demoDestinationFile, demoStr); //DO NOT ERASE, JSON UNFORMATTED
+			    finish(exporterHelpers.exportStatuses.SUCCESS);
 			} catch (errr) {
-			    _callback(exporterHelpers.exportTypes.DEMO, exporterHelpers.exportStatuses.FAILED);
+				exporterHelpers.removeFilesQuietly(savedAssets);
+			    finish(exporterHelpers.exportStatuses.FAILED);
 			}
 		} else {
-			_callback(exporterHelpers.exportTypes.DEMO, exporterHelpers.exportStatuses.SUCCESS);
+			finish(exporterHelpers.exportStatuses.SUCCESS);
+		}
+		} catch (error) {
+			exporterHelpers.removeFilesQuietly(savedAssets);
+			finish(exporterHelpers.exportStatuses.FAILED);
 		}
 	}
 

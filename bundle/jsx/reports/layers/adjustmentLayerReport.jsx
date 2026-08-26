@@ -28,7 +28,6 @@ $.__bodymovin.bm_adjustmentLayerReport = (function () {
             rendererTypes.BROWSER,
             rendererTypes.IOS,
             rendererTypes.ANDROID,
-            rendererTypes.SKOTTIE,
         ],
         builderTypes.ADJUSTMENT_LAYER);
     }

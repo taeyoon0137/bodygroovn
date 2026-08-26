@@ -27,7 +27,6 @@ $.__bodymovin.bm_unhandledLayerReport = (function () {
         this.addMessage(messageTypes.WARNING,
         [
             rendererTypes.BROWSER,
-            rendererTypes.SKOTTIE,
             rendererTypes.IOS,
             rendererTypes.ANDROID,
         ],

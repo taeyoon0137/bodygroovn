@@ -24,7 +24,6 @@ $.__bodymovin.bm_layerStylesBevelEmbossFactory = (function () {
     BevelEmboss.prototype.processStyle = function() {
         this.addMessage(messageTypes.WARNING,
         [
-            rendererTypes.SKOTTIE,
             rendererTypes.BROWSER,
             rendererTypes.IOS,
             rendererTypes.ANDROID,

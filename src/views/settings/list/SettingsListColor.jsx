@@ -1,7 +1,7 @@
 import React from 'react'
 import { StyleSheet, css } from 'aphrodite'
 import Variables from '../../../helpers/styles/variables'
-import { SketchPicker } from 'react-color'
+import ColorPicker from '../../../components/color/ColorPicker'
 
 const styles = StyleSheet.create({
     wrapper: {
@@ -92,8 +92,8 @@ class SettingsListColor extends React.PureComponent {
       })
   }
 
-  updateColor = colorData => {
-    this.props.inputValueChange(colorData.hex)
+  updateColor = color => {
+    this.props.inputValueChange(color)
   }
 
   render(){ 
@@ -115,7 +115,7 @@ class SettingsListColor extends React.PureComponent {
                 <div
                   className={css(styles['radio--picker'])}
                 >
-                  <SketchPicker 
+                  <ColorPicker
                     color={ this.props.inputValue }
                     onChangeComplete={ this.updateColor }
                   />

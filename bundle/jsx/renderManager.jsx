@@ -24,6 +24,13 @@ $.__bodymovin.bm_renderManager = (function () {
     var ob = {}, pendingLayers = [], pendingComps = [], destinationPath, fsDestinationPath, currentCompID, totalLayers, currentLayer, hasExpressionsFlag;
     var currentCompUID;
     var currentExportedComps = [];
+    var renderClosed = true;
+    var renderGeneration = 0;
+    var activeRenderGeneration = 0;
+    var undoGroupOpen = false;
+    var projectHelperActive = false;
+    var dataSaveInProgress = false;
+    var pendingDataSaveResult = null;
     var processesState = {
         render: 'idle',
         report: 'idle',
@@ -265,6 +272,40 @@ $.__bodymovin.bm_renderManager = (function () {
         return comp;
     }
 
+    function isRenderActive(generation) {
+        return !renderClosed && generation === activeRenderGeneration;
+    }
+
+    function logRenderError(context, error) {
+        if (!bm_eventDispatcher.log) {
+            return;
+        }
+        bm_eventDispatcher.log(context);
+        if (error) {
+            bm_eventDispatcher.log(error.message);
+            bm_eventDispatcher.log(error.line);
+            bm_eventDispatcher.log(error.fileName);
+        }
+        bm_eventDispatcher.log($.stack);
+    }
+
+    function failRender(generation, error, alertMessage) {
+        if (!isRenderActive(generation)) {
+            return;
+        }
+        bm_compsManager.cancelled = true;
+        processesState.render = 'failed';
+        processesState.report = 'cancelled';
+        if (error) {
+            logRenderError('ERROR:render', error);
+        }
+        if (alertMessage) {
+            bm_eventDispatcher.sendEvent('bm:alert', {message: alertMessage});
+        }
+        bm_eventDispatcher.sendEvent('bm:render:update', {type: 'update', message: 'Render Failed ', compId: currentCompID, progress: 1, isFinished: false, fsPath: fsDestinationPath});
+        clearData(generation);
+    }
+
     function render(
         comp,
         destination,
@@ -272,81 +313,106 @@ $.__bodymovin.bm_renderManager = (function () {
         compSettings,
         compUid,
     ) {
-        $.__bodymovin.bm_sourceHelper.reset();
-        $.__bodymovin.bm_textShapeHelper.reset();
-        textCompHelper.reset();
-        expressionHelper.setCallbacks(expressionsStarted, expressionsSaved);
-        expressionHelper.reset();
-        essentialPropertiesHelper.reset();
-
-        if(!bm_fileManager.createTemporaryFolder()) {
-            return;
-        };
-        settingsHelper.set(compSettings);
-        var renderingComp = getRenderingComp(comp);
-        var renderingCompSource;
-        if (renderingComp === comp) {
-            renderingCompSource = comp;
-        } else {
-            renderingCompSource = renderingComp.source;
-        }
-
+        renderGeneration += 1;
+        activeRenderGeneration = renderGeneration;
+        var generation = activeRenderGeneration;
+        renderClosed = false;
+        undoGroupOpen = false;
+        projectHelperActive = false;
+        currentCompID = comp && comp.id;
+        currentCompUID = compUid;
+        destinationPath = destination;
+        fsDestinationPath = fsDestination;
         processesState.render = 'working';
         processesState.report = 'working';
         processesState.fonts = 'working';
         processesState.charFonts = 'working';
         processesState.expressions = 'ended';
+        dataSaveInProgress = false;
+        pendingDataSaveResult = null;
 
-        ////
-        app.beginUndoGroup("Render Bodymovin Animation");
-        currentExportedComps = [];
-        hasExpressionsFlag = false;
-        currentCompID = renderingCompSource.id;
-        currentCompUID = compUid;
+        try {
+            $.__bodymovin.bm_sourceHelper.reset(generation);
+            $.__bodymovin.bm_textShapeHelper.reset();
+            textCompHelper.reset();
+            expressionHelper.setCallbacks(
+                function () { expressionsStarted(generation); },
+                function () { expressionsSaved(generation); }
+            );
+            expressionHelper.reset(generation);
+            essentialPropertiesHelper.reset();
 
-        bm_ProjectHelper.init();
-        bm_eventDispatcher.sendEvent('bm:render:update', {type: 'update', message: 'Starting Render', compId: currentCompID, progress: 0});
-        destinationPath = destination;
-        fsDestinationPath = fsDestination;
-        bm_layerElement.reset();
-        pendingLayers.length = 0;
-        pendingComps.length = 0;
-        var exportData = {
-            v : versionHelper.get(),
-            fr : renderingCompSource.frameRate,
-            ip : renderingCompSource.workAreaStart * renderingCompSource.frameRate,
-            op : (renderingCompSource.workAreaStart + renderingCompSource.workAreaDuration) * renderingCompSource.frameRate,
-            w : renderingCompSource.width,
-            h : renderingCompSource.height,
-            nm: renderingCompSource.name,
-            ddd : 0,
-            assets : [],
-            comps : [],
-            fonts : [],
-            layers : [],
-            markers : [],
-            slots: {},
-            props: {},
-            metadata: buildCompositionMetadata(compSettings.metadata),
-        };
-        currentExportedComps.push(currentCompID);
-        ob.renderData.exportData = exportData;
-        ob.renderData.firstFrame = exportData.ip * renderingCompSource.frameRate;
-        if (renderingCompSource !== comp) {
-            essentialPropertiesHelper.addCompProperties(renderingComp, renderingComp.frameRate);
+            if(!bm_fileManager.createTemporaryFolder()) {
+                failRender(generation, null, null);
+                return;
+            }
+            settingsHelper.set(compSettings);
+            var renderingComp = getRenderingComp(comp);
+            var renderingCompSource;
+            if (renderingComp === comp) {
+                renderingCompSource = comp;
+            } else {
+                renderingCompSource = renderingComp.source;
+            }
+
+            ////
+            app.beginUndoGroup("Render Bodymovin Animation");
+            undoGroupOpen = true;
+            currentExportedComps = [];
+            hasExpressionsFlag = false;
+            currentCompID = renderingCompSource.id;
+
+            projectHelperActive = true;
+            bm_ProjectHelper.init();
+            bm_eventDispatcher.sendEvent('bm:render:update', {type: 'update', message: 'Starting Render', compId: currentCompID, progress: 0});
+            bm_layerElement.reset();
+            pendingLayers.length = 0;
+            pendingComps.length = 0;
+            var exportData = {
+                v : versionHelper.get(),
+                meta: {
+                    g: 'bodygroovn ' + versionHelper.getProductVersion(),
+                },
+                fr : renderingCompSource.frameRate,
+                ip : renderingCompSource.workAreaStart * renderingCompSource.frameRate,
+                op : (renderingCompSource.workAreaStart + renderingCompSource.workAreaDuration) * renderingCompSource.frameRate,
+                w : renderingCompSource.width,
+                h : renderingCompSource.height,
+                nm: renderingCompSource.name,
+                ddd : 0,
+                assets : [],
+                comps : [],
+                fonts : [],
+                layers : [],
+                markers : [],
+                slots: {},
+                props: {},
+                metadata: buildCompositionMetadata(compSettings.metadata),
+            };
+            currentExportedComps.push(currentCompID);
+            ob.renderData.exportData = exportData;
+            ob.renderData.firstFrame = exportData.ip * renderingCompSource.frameRate;
+            if (renderingCompSource !== comp) {
+                essentialPropertiesHelper.addCompProperties(renderingComp, renderingComp.frameRate);
+            }
+            createLayers(renderingCompSource, exportData.layers, exportData.fr, true, [renderingCompSource.workAreaStart, renderingCompSource.workAreaStart + renderingCompSource.workAreaDuration]);
+            exportExtraComps(exportData);
+            exportCompMarkers(exportData, renderingCompSource);
+            exportMotionBlur(exportData, renderingCompSource);
+            exportEssentialProps(exportData);
+            totalLayers = pendingLayers.length;
+            currentLayer = 0;
+            createReport(generation);
+            app.scheduleTask('$.__bodymovin.bm_renderManager.renderNextLayer(' + generation + ');', 20, false);
+        } catch (error) {
+            failRender(generation, error, 'Could not initialize the export.');
         }
-        createLayers(renderingCompSource, exportData.layers, exportData.fr, true, [renderingCompSource.workAreaStart, renderingCompSource.workAreaStart + renderingCompSource.workAreaDuration]);
-        exportExtraComps(exportData);
-        exportCompMarkers(exportData, renderingCompSource);
-        exportMotionBlur(exportData, renderingCompSource);
-        exportEssentialProps(exportData);
-        totalLayers = pendingLayers.length;
-        currentLayer = 0;
-        createReport();
-        app.scheduleTask('$.__bodymovin.bm_renderManager.renderNextLayer();', 20, false);
     }
 
-    function onReportFail(error) {
+    function onReportFail(generation, error) {
+        if (!isRenderActive(generation)) {
+            return;
+        }
         if (error) {
             bm_eventDispatcher.log(error.message);
             bm_eventDispatcher.log(error.line);
@@ -354,36 +420,66 @@ $.__bodymovin.bm_renderManager = (function () {
         }
         bm_eventDispatcher.log($.stack);
         processesState.report = 'ended';
-        checkProcesses();
+        checkProcesses(generation);
     }
 
-    function onReportComplete(report) {
-        var reportData = report.serialize();
-        var reportPath = bm_dataManager.saveReport(reportData, destinationPath);
-        bm_eventDispatcher.sendEvent('bm:report:saved',
-            {
-                compId: currentCompID,
-                reportPath: reportPath,
+    function onReportComplete(generation, report, reportDestinationPath, reportCompID) {
+        if (!isRenderActive(generation)) {
+            return;
+        }
+        try {
+            var reportData = report.serialize();
+            var reportPath = bm_dataManager.saveReport(reportData, reportDestinationPath);
+            bm_eventDispatcher.sendEvent('bm:report:saved',
+                {
+                    compId: reportCompID,
+                    reportPath: reportPath,
+                });
+        } catch (error) {
+            bm_eventDispatcher.sendEvent('bm:report:save:failed', {
+                compId: reportCompID,
+                message: error.message || 'Could not save the report.',
             });
+        }
         processesState.report = 'ended';
-        checkProcesses();
+        checkProcesses(generation);
     }
 
-    function createReport() {
+    function expressionProcessingFailed(generation) {
+        generation = generation === undefined ? activeRenderGeneration : generation;
+        failRender(generation, null, 'Could not process an expression because its response was malformed.');
+    }
+
+    function imageProcessingFailed(message, generation) {
+        generation = generation === undefined ? activeRenderGeneration : generation;
+        failRender(generation, null, message || 'Image processing failed.');
+    }
+
+    function createReport(generation) {
         if (settingsHelper.shouldIncludeReport()) {
             var comp = bm_projectManager.getCompositionById(currentCompID);
-            reportManager.createReport(comp, onReportComplete, onReportFail);
+            var reportDestinationPath = destinationPath;
+            var reportCompID = currentCompID;
+            reportManager.createReport(
+                comp,
+                function (report) { onReportComplete(generation, report, reportDestinationPath, reportCompID); },
+                function (error) { onReportFail(generation, error); },
+                function () { return isRenderActive(generation); }
+            );
         } else {
             processesState.report = 'ended';
-            checkProcesses();
+            checkProcesses(generation);
         }
     }
 
-    function checkProcesses() {
+    function checkProcesses(generation) {
+        if (!isRenderActive(generation)) {
+            return;
+        }
         if (processesState.report === 'ended'
             && processesState.render === 'ended') {
-                clearData();
-                bm_eventDispatcher.sendEvent('bm:render:update', {type: 'update', message: 'Render finished', compId: currentCompID, progress: 1, isFinished: true, fsPath: fsDestinationPath});
+            bm_eventDispatcher.sendEvent('bm:render:update', {type: 'update', message: 'Render finished', compId: currentCompID, progress: 1, isFinished: true, fsPath: fsDestinationPath});
+            clearData(generation);
         } else if(processesState.render === 'ended') {
             bm_eventDispatcher.sendEvent('bm:render:update', {type: 'update', message: 'Finishing Report', compId: currentCompID, progress: 1});
         }
@@ -456,44 +552,112 @@ $.__bodymovin.bm_renderManager = (function () {
     function reset() {
         pendingLayers.length = 0;
         pendingComps.length = 0;
-
-        settingsHelper.set(null)
-        bm_ProjectHelper.end();
+        try {
+            settingsHelper.set(null);
+        } catch (error) {
+            logRenderError('ERROR:settingsReset', error);
+        }
+        if (projectHelperActive) {
+            projectHelperActive = false;
+            try {
+                bm_ProjectHelper.end();
+            } catch (error) {
+                logRenderError('ERROR:projectReset', error);
+            }
+        }
     }
 
-    function dataSaved() {
+    function handleDataSaved(generation, succeeded) {
+        if (!isRenderActive(generation)) {
+            return;
+        }
+        if (succeeded === false) {
+            failRender(generation, null, null);
+            return;
+        }
         processesState.render = 'ended';
-        checkProcesses();
+        checkProcesses(generation);
     }
 
-    function expressionsSaved() {
+    function dataSaved(generation, succeeded) {
+        if (!isRenderActive(generation)) {
+            return;
+        }
+        if (dataSaveInProgress) {
+            pendingDataSaveResult = succeeded;
+            return;
+        }
+        handleDataSaved(generation, succeeded);
+    }
+
+    function expressionsSaved(generation) {
+        if (!isRenderActive(generation)) {
+            return;
+        }
         processesState.expressions = 'ended';
-        saveData();
+        saveData(generation);
     }
 
-    function expressionsStarted() {
+    function expressionsStarted(generation) {
+        if (!isRenderActive(generation)) {
+            return;
+        }
         processesState.expressions = 'working';
-        checkProcesses();
+        checkProcesses(generation);
     }
 
-    function clearData() {
+    function clearData(generation) {
+        if (!isRenderActive(generation)) {
+            return;
+        }
+        renderClosed = true;
         reset();
-        $.__bodymovin.bm_textShapeHelper.removeComps();
+        try {
+            $.__bodymovin.bm_textShapeHelper.removeComps();
+        } catch (error) {
+            logRenderError('ERROR:textShapeReset', error);
+        }
+        if (undoGroupOpen) {
+            undoGroupOpen = false;
+            try {
+                app.endUndoGroup();
+            } catch (error) {
+                logRenderError('ERROR:endUndoGroup', error);
+            }
+        }
         bm_compsManager.renderComplete();
-        app.endUndoGroup();
     }
     
-    function saveData() {
+    function saveData(generation) {
+        if (!isRenderActive(generation)) {
+            return;
+        }
         if (processesState.expressions === 'ended'
             && processesState.fonts === 'ended') {
             var currentCompSettings = settingsHelper.get();
             bm_eventDispatcher.sendEvent('bm:render:update', {type: 'update', message: 'Saving data ', compId: currentCompID, progress: 1});
+            dataSaveInProgress = true;
+            pendingDataSaveResult = null;
             try {
-                bm_dataManager.saveData(ob.renderData.exportData, destinationPath, currentCompSettings, dataSaved);
-                assetsStorage.storeAssets(ob.renderData.exportData.assets, currentCompUID);
+                var didStartExporters = bm_dataManager.saveData(
+                    ob.renderData.exportData,
+                    destinationPath,
+                    currentCompSettings,
+                    function (succeeded) { dataSaved(generation, succeeded); }
+                );
+                if (didStartExporters) {
+                    assetsStorage.storeAssets(ob.renderData.exportData.assets, currentCompUID);
+                }
+                dataSaveInProgress = false;
+                if (pendingDataSaveResult !== null) {
+                    var succeeded = pendingDataSaveResult;
+                    pendingDataSaveResult = null;
+                    handleDataSaved(generation, succeeded);
+                }
             } catch(err) {
-                bm_eventDispatcher.sendEvent('bm:alert', {message: 'Could not export files <br /> Is Preferences > Scripting & Expressions > Allow Scripts to Write Files and Access Network enabled?'});
-                bm_eventDispatcher.sendEvent('bm:render:update', {type: 'update', message: 'Render Failed ', compId: currentCompID, progress: 1, isFinished: false, fsPath: fsDestinationPath});
+                dataSaveInProgress = false;
+                pendingDataSaveResult = null;
+                failRender(generation, err, 'Could not export files <br /> Is Preferences > Scripting & Expressions > Allow Scripts to Write Files and Access Network enabled?');
             }
         }
     }
@@ -528,12 +692,18 @@ $.__bodymovin.bm_renderManager = (function () {
     
     function removeExtraData() {
         clearUnrenderedLayers(ob.renderData.exportData.layers);
-        bm_ProjectHelper.end();
+        if (projectHelperActive) {
+            projectHelperActive = false;
+            bm_ProjectHelper.end();
+        }
         /* Todo check if "clearNames" it changes filesize significantly */
         //clearNames(ob.renderData.exportData.layers);
     }
     
-    function renderNextLayer() {
+    function renderNextLayer(generation) {
+        if (!isRenderActive(generation)) {
+            return;
+        }
         try {
             if (bm_compsManager.cancelled) {
                 return;
@@ -547,7 +717,11 @@ $.__bodymovin.bm_renderManager = (function () {
                 renderHelper.pushRenderRange(nextLayerData.range);
                 currentLayer += 1;
                 bm_eventDispatcher.sendEvent('bm:render:update', {type: 'update', message: 'Rendering layer: ' + nextLayerData.layer.name, compId: currentCompID, progress: currentLayer / totalLayers});
-                bm_layerElement.renderLayer(nextLayerData, currentCompSettings.hiddens, renderLayerComplete);
+                bm_layerElement.renderLayer(
+                    nextLayerData,
+                    currentCompSettings.hiddens,
+                    function () { renderLayerComplete(generation); }
+                );
                 /*if (nextLayerData.data.ty === 4 && !currentCompSettings.hiddens) {
                     removeHiddenContent(nextLayerData.data.shapes);
                 }*/
@@ -558,33 +732,30 @@ $.__bodymovin.bm_renderManager = (function () {
                     ob.renderData.exportData.assets,
                     currentCompID,
                     currentCompUID,
+                    generation,
                 );
             }
         } catch(error) {
-             
-            // Uncomment for debugging
-            if (error) {
-                bm_eventDispatcher.log('ERROR:renderNextLayer');
-                bm_eventDispatcher.log(error.message);
-                bm_eventDispatcher.log(error.line);
-                bm_eventDispatcher.log(error.fileName);
-            }
-            bm_eventDispatcher.log($.stack);
-            
-            bm_eventDispatcher.sendEvent('bm:render:update', {type: 'update', message: 'Render Failed ', compId: currentCompID, progress: 1, isFinished: false, fsPath: fsDestinationPath});
+            failRender(generation, error, null);
         }
     }
 
-    function handleFontsEnded() {
+    function handleFontsEnded(generation) {
+        if (!isRenderActive(generation)) {
+            return;
+        }
         processesState.fonts = 'ended';
-        saveData();
+        saveData(generation);
     }
     
-    function checkFonts() {
+    function checkFonts(generation) {
+        if (!isRenderActive(generation)) {
+            return;
+        }
         var fonts = $.__bodymovin.bm_sourceHelper.getFonts();
         var exportData;
         if (fonts.length === 0) {
-            handleFontsEnded();
+            handleFontsEnded(generation);
         } else {
             var currentCompSettings = settingsHelper.get();
             if (currentCompSettings.glyphs) {
@@ -619,7 +790,8 @@ $.__bodymovin.bm_renderManager = (function () {
     }
     
     function setChars(chars) {
-        if (bm_compsManager.cancelled) {
+        var generation = activeRenderGeneration;
+        if (!isRenderActive(generation) || bm_compsManager.cancelled) {
             return;
         }
         //bm_eventDispatcher.sendEvent('bm:render:chars', {type: 'save', compId: currentCompID, chars: chars});
@@ -627,30 +799,44 @@ $.__bodymovin.bm_renderManager = (function () {
         for (i = 0; i < len; i += 1) {
             delete chars[i].font;
         }
-        setCharsData(chars)
+        setCharsData(chars, generation)
     }
     
-    function setFontData(fontData) {
+    function setFontData(fontData, generation) {
+        generation = generation === undefined ? activeRenderGeneration : generation;
+        if (!isRenderActive(generation)) {
+            return;
+        }
         var exportData = ob.renderData.exportData;
         exportData.fonts = fontData;
         $.__bodymovin.bm_textShapeHelper.exportFonts(fontData);
         //$.__bodymovin.bm_textShapeHelper.exportChars(fontData);
-        handleFontsEnded();
+        handleFontsEnded(generation);
     }
     
-    function setCharsData(charData) {
+    function setCharsData(charData, generation) {
+        generation = generation === undefined ? activeRenderGeneration : generation;
+        if (!isRenderActive(generation)) {
+            return;
+        }
         var exportData = ob.renderData.exportData;
         exportData.chars = charData;
-        handleFontsEnded();
+        handleFontsEnded(generation);
     }
     
-    function imagesReady() {
-        checkFonts();
+    function imagesReady(generation) {
+        if (!isRenderActive(generation)) {
+            return;
+        }
+        checkFonts(generation);
     }
     
-    function renderLayerComplete() {
+    function renderLayerComplete(generation) {
+        if (!isRenderActive(generation)) {
+            return;
+        }
         renderHelper.popRenderRange();
-        app.scheduleTask('$.__bodymovin.bm_renderManager.renderNextLayer();', 20, false);
+        app.scheduleTask('$.__bodymovin.bm_renderManager.renderNextLayer(' + generation + ');', 20, false);
     }
     
     function hasExpressions() {
@@ -658,7 +844,7 @@ $.__bodymovin.bm_renderManager = (function () {
     }
 
     function getVersion() {
-        bm_eventDispatcher.sendEvent('bm:version', {value: versionHelper.get()});
+        bm_eventDispatcher.sendEvent('bm:version', {value: versionHelper.getProductVersion()});
         bm_eventDispatcher.sendEvent('app:version', {value: app.version});
     }
     
@@ -675,6 +861,9 @@ $.__bodymovin.bm_renderManager = (function () {
     ob.setCharsData = setCharsData;
     ob.hasExpressions = hasExpressions;
     ob.getVersion = getVersion;
+    ob.expressionProcessingFailed = expressionProcessingFailed;
+    ob.imageProcessingFailed = imageProcessingFailed;
+    ob.isRenderActive = isRenderActive;
     
     return ob;
 }());

@@ -10,31 +10,15 @@ $.__bodymovin.bm_dataManager = (function () {
     var exporterHelpers = $.__bodymovin.bm_exporterHelpers;
     var exportStatuses = exporterHelpers.exportStatuses;
     var exportTypes = exporterHelpers.exportTypes;
-    var bm_bannerExporter = $.__bodymovin.bm_bannerExporter;
     var bm_standardExporter = $.__bodymovin.bm_standardExporter;
     var bm_standaloneExporter = $.__bodymovin.bm_standaloneExporter;
     var bm_demoExporter = $.__bodymovin.bm_demoExporter;
-    var bm_avdExporter = $.__bodymovin.bm_avdExporter;
-    var bm_smilExporter = $.__bodymovin.bm_smilExporter;
-    var bm_riveExporter = $.__bodymovin.bm_riveExporter;
     var bm_fileManager = $.__bodymovin.bm_fileManager;
     var layerTypes = $.__bodymovin.layerTypes;
     var settingsHelper = $.__bodymovin.bm_settingsHelper;
 
     var results = {
-        avd: {
-            status: exportStatuses.IDLE
-        },
-        smil: {
-            status: exportStatuses.IDLE
-        },
-        banner: {
-            status: exportStatuses.IDLE
-        },
         demo: {
-            status: exportStatuses.IDLE
-        },
-        rive: {
             status: exportStatuses.IDLE
         },
         standalone: {
@@ -130,7 +114,9 @@ $.__bodymovin.bm_dataManager = (function () {
     }
 
     function onResult(type, status) {
-
+        if (!results[type] || results[type].status !== exportStatuses.IDLE) {
+            return;
+        }
         results[type].status = status;
         var idleCount = 0, failedCount = 0
         for (var exportType in results) {
@@ -145,16 +131,16 @@ $.__bodymovin.bm_dataManager = (function () {
             if (failedCount > 0) {
                 bm_eventDispatcher.sendEvent('bm:alert', {message: 'Some exports failed.<br /> Is Preferences > Scripting & Expressions > Allow Scripts to Write Files and Access Network enabled?'});
             }
-            _endCallback();
+            if (_endCallback) {
+                var endCallback = _endCallback;
+                _endCallback = null;
+                endCallback(failedCount === 0);
+            }
         }
     }
 
     function resetStatus() {
-        results[exportTypes.AVD].status = exportStatuses.IDLE;
-        results[exportTypes.SMIL].status = exportStatuses.IDLE;
-        results[exportTypes.BANNER].status = exportStatuses.IDLE;
         results[exportTypes.DEMO].status = exportStatuses.IDLE;
-        results[exportTypes.RIVE].status = exportStatuses.IDLE;
         results[exportTypes.STANDALONE].status = exportStatuses.IDLE;
         results[exportTypes.STANDARD].status = exportStatuses.IDLE;
     }
@@ -163,6 +149,8 @@ $.__bodymovin.bm_dataManager = (function () {
         resetStatus();
 
         _endCallback = callback;
+
+        try {
 
         var destinationFile = new File(destinationPath);
         var destinationFileName = destinationFile.name;
@@ -185,13 +173,17 @@ $.__bodymovin.bm_dataManager = (function () {
 
         ////
 
-        bm_avdExporter.save(destinationPath, config, onResult);
-        bm_smilExporter.save(destinationPath, config, onResult);
-        bm_bannerExporter.save(destinationPath, config, onResult);
         bm_demoExporter.save(destinationPath, config, onResult, data);
-        bm_riveExporter.save(destinationPath, config, onResult);
         bm_standardExporter.save(destinationPath, config, onResult);
         bm_standaloneExporter.save(destinationPath, config, onResult);
+
+        return true;
+        } catch (error) {
+            onResult(exportTypes.DEMO, exportStatuses.FAILED);
+            onResult(exportTypes.STANDALONE, exportStatuses.FAILED);
+            onResult(exportTypes.STANDARD, exportStatuses.FAILED);
+            return false;
+        }
 
     }
 
@@ -202,16 +194,9 @@ $.__bodymovin.bm_dataManager = (function () {
         var destinationData = exporterHelpers.parseDestination(destinationPath, 'report');
         var demoDestinationFile = new File(destinationData.folder.fsName);
         demoDestinationFile.changePath('report.json');
-        demoDestinationFile.open('w', 'TEXT', '????');
-        demoDestinationFile.encoding = 'UTF-8';
         var reportStr = JSON.stringify(reportData);
         reportStr = reportStr.replace(/\n/g, '');
-        try {
-            demoDestinationFile.write(reportStr);
-            demoDestinationFile.close();
-        } catch (error) {
-            bm_eventDispatcher.log('ERROR SAVE REPORT')
-        }
+        exporterHelpers.writeTextFile(demoDestinationFile, reportStr);
         return demoDestinationFile.fsName;
     }
     

@@ -1,5 +1,4 @@
 import React from 'react'
-import { browserHistory } from 'react-router'
 import {connect} from 'react-redux'
 import { StyleSheet, css } from 'aphrodite'
 import BaseButton from '../../components/buttons/Base_button'
@@ -90,9 +89,9 @@ class Settings extends React.Component {
     }
 	}
 
-  componentWillReceiveProps(props) {
-    if(!this.storedSettings && props.settings) {
-      this.storedSettings = props.settings
+  componentDidUpdate() {
+    if(!this.storedSettings && this.props.settings) {
+      this.storedSettings = this.props.settings
     }
   }
 

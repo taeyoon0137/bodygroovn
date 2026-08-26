@@ -1,11 +1,10 @@
 import actionTypes from '../actions/actionTypes'
 import ExportModes from '../../helpers/ExportModes'
-import LottieVersions, {findLottieVersion} from '../../helpers/LottieVersions'
-import LottieLibraryOrigins from '../../helpers/LottieLibraryOrigins'
 import audioBitOptions from '../../helpers/enums/audioBitOptions'
 import Variables from '../../helpers/styles/variables'
 import random from '../../helpers/randomGenerator'
 import {getSimpleSeparator} from '../../helpers/osHelper'
+import {getPaletteColors} from '../../helpers/pngSettings'
 import deepmerge from 'deepmerge'
 import { v4 as uuidv4 } from 'uuid';
 
@@ -44,7 +43,6 @@ let defaultComposition = {
         segmented: false,
         segmentedTime: 10,
         standalone: false,
-        avd: false,
         glyphs: true,
         includeExtraChars: false,
         bundleFonts: false,
@@ -53,11 +51,10 @@ let defaultComposition = {
         original_assets: false,
         original_names: false,
         should_encode_images: false,
-        should_compress: true,
+        png_palette_colors: 256,
         should_skip_images: false,
         should_reuse_images: false,
         should_include_av_assets: false,
-        compression_rate: 80,
         extraComps: {
             active: false,
             list:[]
@@ -76,31 +73,10 @@ let defaultComposition = {
           standard: true,
           demo: false,
           standalone: false,
-          banner: false,
-          avd: false,
-          smil: false,
-          rive: false,
           reports: false,
         },
         demoData: {
           backgroundColor: Variables.colors.white,
-        },
-        banner: {
-          lottie_origin: LottieLibraryOrigins.LOCAL,
-          lottie_path: 'https://',
-          lottie_library: LottieVersions[0].value,
-          lottie_renderer: 'svg',
-          width: 500,
-          height: 500,
-          use_original_sizes: true,
-          original_width: 500,
-          original_height: 500,
-          click_tag: 'https://',
-          zip_files: true,
-          shouldIncludeAnimationDataInTemplate: false,
-          shouldLoop: false,
-          loopCount: 0,
-          localPath: null,
         },
         expressions: {
           shouldBake: false,
@@ -154,13 +130,6 @@ function createComp(comp) {
     name: comp.name, 
     settings: {
       ...defaultComposition.settings,
-      banner: {
-        ...defaultComposition.settings.banner,
-        width: comp.width || 500,
-        height: comp.height || 500,
-        original_width: comp.width || 500,
-        original_height: comp.height || 500,
-      },
       demoData: {
         ...defaultComposition.settings.demoData,
       }
@@ -169,6 +138,26 @@ function createComp(comp) {
 }
 
 const overwriteMerge = (_, destinationArray) => destinationArray
+
+function migratePngSettings(settings) {
+  const migratedSettings = {...settings}
+  migratedSettings.png_palette_colors = getPaletteColors(migratedSettings)
+  delete migratedSettings.should_compress
+  delete migratedSettings.compression_rate
+  delete migratedSettings.banner
+  delete migratedSettings.avd
+  if (migratedSettings.export_modes) {
+    migratedSettings.export_modes = {...migratedSettings.export_modes}
+    delete migratedSettings.export_modes.banner
+    delete migratedSettings.export_modes.avd
+    delete migratedSettings.export_modes.smil
+    delete migratedSettings.export_modes.rive
+  }
+  if (![ExportModes.STANDARD, ExportModes.STANDALONE].includes(migratedSettings.export_mode)) {
+    migratedSettings.export_mode = ExportModes.STANDARD
+  }
+  return migratedSettings
+}
 
 function setStoredData(state, action) {
   let compositions = action.projectData.compositions
@@ -179,6 +168,7 @@ function setStoredData(state, action) {
       if (!item.uid) {
         item.uid = uuidv4();
       }
+      item.settings = migratePngSettings(item.settings || {})
       compositions[comp] = deepmerge(defaultComposition, item, { arrayMerge: overwriteMerge })
     }
   }
@@ -256,21 +246,6 @@ function searchRemovedExtraComps(settings, compositions) {
   return newSettings
 }
 
-function updateCompsSize(settings, composition) {
-  if(settings.banner.original_width !== composition.width
-    || settings.banner.original_height !== composition.height) {
-    return {
-      ...settings,
-        banner: {
-          ...settings.banner,
-          original_width: composition.width,
-          original_height: composition.height,
-        }
-    }
-  }
-  return settings
-}
-
 function addCompositions(state, action) {
   const currentItems = state.items;
   let newItems = {}
@@ -293,7 +268,6 @@ function addCompositions(state, action) {
         itemsChanged = true
       }
       let settings = searchRemovedExtraComps(itemData.settings, action.compositions)
-      settings = updateCompsSize(itemData.settings, item)
       if(settings !== itemData.settings){
         itemData = {...currentItems[item.id], ...{settings: settings}}
         itemsChanged = true
@@ -410,13 +384,8 @@ function cancelSettings(state, action) {
     newItem.destination = newItem.destination.replace(extensionReplacer,'.json')
     newItem.absoluteURI = newItem.absoluteURI.replace(extensionReplacer,'.json')
   } else {
-    if (newItem.settings.banner.zip_files) {
-      newItem.destination = newItem.destination.replace(extensionReplacer,'.zip')
-      newItem.absoluteURI = newItem.absoluteURI.replace(extensionReplacer,'.zip')
-    } else {
-      newItem.destination = newItem.destination.replace(extensionReplacer,'.json')
-      newItem.absoluteURI = newItem.absoluteURI.replace(extensionReplacer,'.json')
-    }
+    newItem.destination = newItem.destination.replace(extensionReplacer,'.json')
+    newItem.absoluteURI = newItem.absoluteURI.replace(extensionReplacer,'.json')
   }
   newItems[state.current] = newItem
   newState.items = newItems
@@ -533,7 +502,7 @@ function applySettingsToAllComps(state, action) {
     // checking for the id field to identify old versions of this data stored in local storage
     const settings = action.comp.id ? action.comp.settings : action.comp
     const comp = action.comp.id ? action.comp : {}
-    const settingsClone = JSON.parse(JSON.stringify(settings))
+    const settingsClone = migratePngSettings(JSON.parse(JSON.stringify(settings)))
     const item = items[key]
     if (item.selected) {
       const itemSettings = {
@@ -580,7 +549,7 @@ function applySettingsFromCache(state, action) {
   // checking for the id field to identify old versions of this data stored in local storage
   const settings = action.comp.id ? action.comp.settings : action.comp
   const comp = action.comp.id ? action.comp : {}
-  const settingsClone = JSON.parse(JSON.stringify(settings))
+  const settingsClone = migratePngSettings(JSON.parse(JSON.stringify(settings)))
 
   let item = state.items[state.current]
   const newSettings = {
@@ -602,35 +571,6 @@ function applySettingsFromCache(state, action) {
   return newState
 }
 
-/*function updateExportMode(state, action) {
-  let newItem = {...state.items[state.current]}
-  let newSettings = {...newItem.settings}
-  newSettings.export_mode = action.exportMode
-  if (newItem.destination) {
-    if (newSettings.export_mode === ExportModes.STANDALONE) {
-      newItem.destination = newItem.destination.replace(extensionReplacer,'.js')
-      newItem.absoluteURI = newItem.absoluteURI.replace(extensionReplacer,'.js')
-    } else if (newSettings.export_mode === ExportModes.STANDARD){
-      newItem.destination = newItem.destination.replace(extensionReplacer,'.json')
-      newItem.absoluteURI = newItem.absoluteURI.replace(extensionReplacer,'.json')
-    } else {
-      if (newSettings.banner.zip_files) {
-        newItem.destination = newItem.destination.replace(extensionReplacer,'.zip')
-        newItem.absoluteURI = newItem.absoluteURI.replace(extensionReplacer,'.zip')
-      } else {
-        newItem.destination = newItem.destination.replace(extensionReplacer,'.json')
-        newItem.absoluteURI = newItem.absoluteURI.replace(extensionReplacer,'.json')
-      }
-    }
-  }
-  newItem.settings = newSettings
-  let newItems = {...state.items}
-  newItems[state.current] = newItem
-  let newState = {...state}
-  newState.items = newItems
-  return newState
-}*/
-
 function toggleMode(state, action) {
   let newItem = {...state.items[state.current]}
   let newSettings = {...newItem.settings}
@@ -645,9 +585,6 @@ function toggleMode(state, action) {
     if (newSettings.export_modes.standalone) {
       newItem.destination = newItem.destination.replace(extensionReplacer,'.js')
       newItem.absoluteURI = newItem.absoluteURI.replace(extensionReplacer,'.js')
-    } else if (newSettings.export_modes.banner && newSettings.banner.zip_files){
-      newItem.destination = newItem.destination.replace(extensionReplacer,'.zip')
-      newItem.absoluteURI = newItem.absoluteURI.replace(extensionReplacer,'.zip')
     } else {
       newItem.destination = newItem.destination.replace(extensionReplacer,'.json')
       newItem.absoluteURI = newItem.absoluteURI.replace(extensionReplacer,'.json')
@@ -660,69 +597,6 @@ function toggleMode(state, action) {
     ...state,
     items: newItems
   }
-}
-
-function updateBanner(state, action) {
-  let newItem = {...state.items[state.current]}
-  let newSettings = {...newItem.settings}
-  const newBanner = {...newSettings.banner}
-  if (action.type === actionTypes.SETTINGS_BANNER_WIDTH_UPDATED) {
-    newBanner.width = action.value
-  } else if (action.type === actionTypes.SETTINGS_BANNER_HEIGHT_UPDATED) {
-    newBanner.height = action.value
-  } else if (action.type === actionTypes.SETTINGS_BANNER_ORIGIN_UPDATED) {
-    newBanner.lottie_origin = action.value
-  } else if (action.type === actionTypes.SETTINGS_BANNER_VERSION_UPDATED) {
-    newBanner.lottie_library = action.value
-  } else if (action.type === actionTypes.SETTINGS_BANNER_LIBRARY_PATH_UPDATED) {
-    newBanner.lottie_path = action.value
-  } else if (action.type === actionTypes.SETTINGS_BANNER_RENDERER_UPDATED) {
-    newBanner.lottie_renderer = action.value
-  } else if (action.type === actionTypes.SETTINGS_BANNER_CLICK_TAG_UPDATED) {
-    newBanner.click_tag = action.value
-  } else if (action.type === actionTypes.SETTINGS_BANNER_ZIP_FILES_UPDATED) {
-    newBanner.zip_files = !newBanner.zip_files
-  } else if (action.type === actionTypes.SETTINGS_BANNER_INCLUDE_DATA_IN_TEMPLATE_UPDATED) {
-    newBanner.shouldIncludeAnimationDataInTemplate = !newBanner.shouldIncludeAnimationDataInTemplate
-  } else if (action.type === actionTypes.SETTINGS_BANNER_CUSTOM_SIZE_UPDATED) {
-    newBanner.use_original_sizes = !newBanner.use_original_sizes
-  } else if (action.type === actionTypes.SETTINGS_BANNER_LOOP_TOGGLE) {
-    newBanner.shouldLoop = !newBanner.shouldLoop
-  } else if (action.type === actionTypes.SETTINGS_BANNER_LOOP_COUNT_CHANGE) {
-    newBanner.loopCount = action.value
-  } else if (action.type === actionTypes.SETTINGS_BANNER_LIBRARY_FILE_SELECTED) {
-    newBanner.localPath = action.value
-  }
-  if (action.type === actionTypes.SETTINGS_BANNER_ORIGIN_UPDATED 
-    || action.type === actionTypes.SETTINGS_BANNER_VERSION_UPDATED) 
-  {
-    if ([LottieLibraryOrigins.LOCAL, LottieLibraryOrigins.CDNJS].includes(newBanner.lottie_origin)) {
-      const lottieVersion = findLottieVersion(newBanner.lottie_library)
-      if (!lottieVersion.renderers.includes(newBanner.lottie_renderer)) {
-        newBanner.lottie_renderer = lottieVersion.renderers[0]
-      }
-    }
-  }
-  newSettings.banner = newBanner
-  newItem.settings = newSettings
-  let newItems = {...state.items}
-  newItems[state.current] = newItem
-
-  if (action.type === actionTypes.SETTINGS_BANNER_ZIP_FILES_UPDATED) {
-    if (newBanner.zip_files) {
-      newItem.destination = newItem.destination.replace(extensionReplacer,'.zip')
-      newItem.absoluteURI = newItem.absoluteURI.replace(extensionReplacer,'.zip')
-    } else {
-      newItem.destination = newItem.destination.replace(extensionReplacer,'.json')
-      newItem.absoluteURI = newItem.absoluteURI.replace(extensionReplacer,'.json')
-    }
-  }
-
-  return {
-    ...state,
-    items: newItems
-  }
-
 }
 
 function updateDemo(state, action) {
@@ -1051,20 +925,6 @@ export default function compositions(state = initialState, action) {
       return toggleSelected(state, action)
     case actionTypes.SETTINGS_APPLY_FROM_CACHE:
       return applySettingsFromCache(state, action)
-    case actionTypes.SETTINGS_BANNER_WIDTH_UPDATED:
-    case actionTypes.SETTINGS_BANNER_HEIGHT_UPDATED:
-    case actionTypes.SETTINGS_BANNER_ORIGIN_UPDATED:
-    case actionTypes.SETTINGS_BANNER_VERSION_UPDATED:
-    case actionTypes.SETTINGS_BANNER_LIBRARY_PATH_UPDATED:
-    case actionTypes.SETTINGS_BANNER_RENDERER_UPDATED:
-    case actionTypes.SETTINGS_BANNER_CLICK_TAG_UPDATED:
-    case actionTypes.SETTINGS_BANNER_ZIP_FILES_UPDATED:
-    case actionTypes.SETTINGS_BANNER_INCLUDE_DATA_IN_TEMPLATE_UPDATED:
-    case actionTypes.SETTINGS_BANNER_CUSTOM_SIZE_UPDATED:
-    case actionTypes.SETTINGS_BANNER_LOOP_TOGGLE:
-    case actionTypes.SETTINGS_BANNER_LOOP_COUNT_CHANGE:
-    case actionTypes.SETTINGS_BANNER_LIBRARY_FILE_SELECTED:
-      return updateBanner(state, action)
     case actionTypes.SETTINGS_MODE_TOGGLE:
       return toggleMode(state, action)
     case actionTypes.REPORTS_SAVED:

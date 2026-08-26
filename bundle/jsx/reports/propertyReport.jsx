@@ -22,7 +22,6 @@ $.__bodymovin.bm_propertyReport = (function () {
         if (property.expressionEnabled && !property.expressionError && !settingsHelper.shouldBakeExpressions()) {
             this.addMessage(messageTypes.ERROR,
             [
-                rendererTypes.SKOTTIE,
                 rendererTypes.IOS,
                 rendererTypes.ANDROID,
             ],
@@ -31,7 +30,6 @@ $.__bodymovin.bm_propertyReport = (function () {
                 this.addMessage(messageTypes.ERROR,
                 [
                     rendererTypes.BROWSER,
-                    rendererTypes.SKOTTIE,
                     rendererTypes.IOS,
                     rendererTypes.ANDROID,
                 ],

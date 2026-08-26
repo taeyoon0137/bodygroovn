@@ -60,8 +60,8 @@ class Range extends React.Component {
 		this.resizeHandler = this.resizeHandler.bind(this)
 	}
 
-	componentWillUpdate(nextProps, nextState) {
-		if(nextState.isDown === true && this.state.isDown === false) {
+	componentDidUpdate(prevProps, prevState) {
+		if(this.state.isDown === true && prevState.isDown === false) {
 			document.addEventListener('mouseup', this.mouseUpHandler)
 			document.addEventListener('mousemove', this.mouseMoveHandler)
 		}

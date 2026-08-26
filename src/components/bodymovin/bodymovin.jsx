@@ -16,16 +16,13 @@ class Bodymovin extends React.Component {
 		}
 	}
 
-	componentWillReceiveProps(props) {
-		if(props.animationData !== this.props.animationData || props.path !== this.props.path) {
+	componentDidUpdate(prevProps) {
+		if(prevProps.animationData !== this.props.animationData || prevProps.path !== this.props.path) {
 			if(this.animation) {
 				this.animation.destroy()
 				this.animation = null
 			}
 		}
-	}
-
-	componentDidUpdate() {
 		this.attachAnimation()
 	}
 

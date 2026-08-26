@@ -1,5 +1,5 @@
 import { call, put, takeEvery, select, all, race, take } from 'redux-saga/effects'
-import { delay } from 'redux-saga'
+import { delay } from 'redux-saga/effects'
 import actions from '../actions/actionTypes'
 import fileBrowser from '../../helpers/FileBrowser'
 import loadBodymovinFileData, {loadArrayBuffer} from '../../helpers/FileLoader'
@@ -9,12 +9,6 @@ import {
 	timelineUpdated,
 } from '../actions/previewActions'
 import {getSimpleSeparator} from '../../helpers/osHelper'
-import {
-	getLatestVersion as getLatestSkottieVersion,
-	getSavedVersion as getSkottieSavedVersions,
-	saveLatestVersion as saveSkottieLatestVersion,
-	initialize as initializeSkottie,
-} from '../../helpers/skottie/skottie'
 import {
 	getCompositionTimelinePosition,
 	setCompositionTimelinePosition,
@@ -132,22 +126,6 @@ function *handleTimelineLock() {
 	})
 }
 
-function *searchSkottieUpdates() {
-	try {
-		yield call(initializeSkottie)
-		const latestVersion = yield call(getLatestSkottieVersion)
-		if (!latestVersion) {
-			return;
-		}
-		const savedVersions = yield call(getSkottieSavedVersions)
-		if (!savedVersions.length || savedVersions[savedVersions.length - 1].version !== latestVersion) {
-			saveSkottieLatestVersion(latestVersion)
-		}
-	} catch(err) {
-		console.log(err)
-	}
-}
-
 export default [
   takeEvery(actions.PREVIEW_BROWSE_FILE, browseFile),
   takeEvery([
@@ -156,5 +134,4 @@ export default [
   ]
   , loadBodymovinFile),
   takeEvery(actions.PREVIEW_INITIALIZE, handleTimelineLock),
-  takeEvery(actions.PREVIEW_INITIALIZE, searchSkottieUpdates),
 ]

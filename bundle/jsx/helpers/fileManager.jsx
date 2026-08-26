@@ -26,7 +26,7 @@ $.__bodymovin.bm_fileManager = (function () {
         temporaryFolder.changePath('Bodymovin/' + folder_random_name);
         if (!temporaryFolder.exists) {
             if (!temporaryFolder.create()) {
-                bm_eventDispatcher.sendEvent('alert', 'folder failed to be created at: ' + temporaryFolder.fsName);
+                bm_eventDispatcher.sendEvent('bm:alert', {message: 'Could not create the temporary export folder at: ' + temporaryFolder.fsName});
                 return false;
             }
         }
@@ -41,16 +41,47 @@ $.__bodymovin.bm_fileManager = (function () {
     function addFile(fileName, path, content, type) {
         var renderFileData = createFile(fileName, path, type);
         var dataFile = renderFileData.file;
-        dataFile.open('w', 'TEXT', '????');
-        dataFile.encoding = 'UTF-8';
+        var isOpen = false;
         try {
-            dataFile.write(content); //DO NOT ERASE, JSON UNFORMATTED
+            assertSuccess(dataFile.open('w', 'TEXT', '????'), 'Could not open file for writing: ' + dataFile.fsName);
+            isOpen = true;
+            dataFile.encoding = 'UTF-8';
+            assertSuccess(dataFile.write(content), 'Could not write file: ' + dataFile.fsName); //DO NOT ERASE, JSON UNFORMATTED
             //dataFile.write(JSON.stringify(ob.renderData.exportData, null, '  ')); //DO NOT ERASE, JSON FORMATTED
-            dataFile.close();
+            assertSuccess(dataFile.close(), 'Could not close file: ' + dataFile.fsName);
+            isOpen = false;
         } catch (err) {
+            if (isOpen) {
+                closeQuietly(dataFile);
+            }
+            removeQuietly(dataFile);
+            renderFiles.splice(getIndexById(renderFileData.id), 1);
             bm_eventDispatcher.sendEvent('bm:alert', {message: 'Could not write file.<br /> Make sure you have enabled scripts to write files. <br /> Edit > Preferences > General > Allow Scripts to Write Files and Access Network '});
+            throw err;
         }
         return renderFileData;
+    }
+
+    function assertSuccess(result, message) {
+        if (result === false) {
+            throw new Error(message);
+        }
+    }
+
+    function closeQuietly(file) {
+        try {
+            file.close();
+        } catch (error) {
+            // Preserve the original I/O error.
+        }
+    }
+
+    function removeQuietly(file) {
+        try {
+            file.remove();
+        } catch (error) {
+            // Cleanup must not obscure the original I/O error.
+        }
     }
 
     function createFile(fileName, path, type) {
@@ -60,7 +91,7 @@ $.__bodymovin.bm_fileManager = (function () {
         while (i < len) {
             fileFolder.changePath(path[i]);
             if (!fileFolder.exists) {
-                fileFolder.create();
+                assertSuccess(fileFolder.create(), 'Could not create folder: ' + fileFolder.fsName);
             }
             i += 1;
         }

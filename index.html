@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon" href="./favicon.ico">
+    <link rel="stylesheet" href="/reset.css">
+    <link rel="stylesheet" href="/main.css">
+    <!-- vite-ignore -->
+    <script src="./lib/CSInterface/CSInterface.js"></script>
+    <title>bodygroovn</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script>
+      (function startBodygroovnNodeBridge() {
+        var nodeRequire = window.cep_node ? window.cep_node.require : window.require;
+        var BufferCtor = nodeRequire('buffer').Buffer;
+        var fs = nodeRequire('fs');
+        var serverModule = nodeRequire(__dirname + '/server/main.js');
+        var controllerPromise = serverModule.createServer();
+        window.__bodygroovnNodeBridge = Object.freeze({
+          getConnection: function () { return controllerPromise.then(function (controller) { return controller.getConnection(); }); },
+          readFileSync: function (filePath) { return fs.readFileSync(filePath); },
+          setExportDestination: function (filePath) { return controllerPromise.then(function (controller) { return controller.setExportDestination(filePath); }); },
+          statSync: function (filePath) { return fs.statSync(filePath); },
+          writeArrayBuffer: function (filePath, value, callback) { return fs.writeFile(filePath, BufferCtor.from(value), callback); },
+          writeFile: function () { return fs.writeFile.apply(fs, arguments); },
+          existsSync: function (filePath) { return fs.existsSync(filePath); },
+          mkdirSync: function (filePath) { return fs.mkdirSync(filePath); }
+        });
+      }());
+    </script>
+    <script type="module" src="/src/index.js"></script>
+  </body>
+</html>

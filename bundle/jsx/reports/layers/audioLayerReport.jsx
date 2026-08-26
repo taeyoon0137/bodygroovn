@@ -28,7 +28,6 @@ $.__bodymovin.bm_audioLayerReport = (function () {
                 rendererTypes.BROWSER,
                 rendererTypes.IOS,
                 rendererTypes.ANDROID,
-                rendererTypes.SKOTTIE,
             ],
             builderTypes.AUDIO_LAYER);
     }

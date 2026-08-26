@@ -27,7 +27,6 @@ $.__bodymovin.bm_cameraLayerReport = (function () {
             [
                 rendererTypes.IOS,
                 rendererTypes.ANDROID,
-                rendererTypes.SKOTTIE,
             ],
             builderTypes.CAMERA_LAYER);
     }

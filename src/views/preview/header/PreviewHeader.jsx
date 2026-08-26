@@ -1,11 +1,11 @@
-import React, {PureComponent} from 'react'
+import {PureComponent} from 'react'
 import { StyleSheet, css } from 'aphrodite'
 import Variables from '../../../helpers/styles/variables'
 import BaseButton from '../../../components/buttons/Base_button'
 import {previewTypes} from '../viewer/PreviewViewer'
 import BodymovinCheckbox from '../../../components/bodymovin/bodymovin_checkbox'
 import checkbox from '../../../assets/animations/checkbox.json'
-import { SketchPicker } from 'react-color'
+import ColorPicker from '../../../components/color/ColorPicker'
 import BaseHeader from '../../../components/header/Base_Header'
 
 const styles = StyleSheet.create({
@@ -111,8 +111,8 @@ class PreviewHeader extends PureComponent {
         })
     }
 
-    updateColor = colorData => {
-        this.props.updateColor(colorData.hex)
+    updateColor = color => {
+        this.props.updateColor(color)
     }
 
     render() {
@@ -144,21 +144,6 @@ class PreviewHeader extends PureComponent {
                             <span>Browser</span>
                         </div>
                         <div
-                            className={css(styles.previewOption)}
-                            onClick={()=>props.onRendererSelected(previewTypes.SKOTTIE)}
-                        >
-                            <BodymovinCheckbox
-                                animationData={checkbox}
-                                animate={props.selectedTypes.includes(previewTypes.SKOTTIE)}
-                            >
-                                <div
-                                    className={css(styles['previewOption-checkbox'])}
-                                    
-                                />
-                            </BodymovinCheckbox>
-                            <span>Skottie</span>
-                        </div>
-                        <div
                             className={css(styles.flexExtender)}
                         />
 
@@ -173,7 +158,7 @@ class PreviewHeader extends PureComponent {
                             />
                             {this.state.isColorPickerEnabled && 
                                 <div className={css(styles['colorPicker-box'])}>
-                                    <SketchPicker 
+                                    <ColorPicker
                                         color={ props.backgroundColor }
                                         onChangeComplete={ this.updateColor }
                                     />

@@ -6,6 +6,7 @@ $.__bodymovin.bm_audioSourceHelper = (function () {
     var bm_downloadManager = $.__bodymovin.bm_downloadManager;
     var renderQueueHelper = $.__bodymovin.bm_renderQueueHelper;
     var bm_fileManager = $.__bodymovin.bm_fileManager;
+    var bm_renderManager = $.__bodymovin.bm_renderManager;
     var settingsHelper = $.__bodymovin.bm_settingsHelper;
     var audioSources = []
     , assetsArray
@@ -15,8 +16,13 @@ $.__bodymovin.bm_audioSourceHelper = (function () {
     var finishCallback;
     var templateProject;
     var containingCompCopy;
+    var currentRenderGeneration = 0;
     var _lastSecond = -1;
     var _lastMilliseconds = -1;
+
+    function isRenderGenerationActive(generation) {
+        return generation === currentRenderGeneration && bm_renderManager.isRenderActive(generation);
+    }
 
     function checkAudioSource(item) {
 
@@ -217,7 +223,10 @@ $.__bodymovin.bm_audioSourceHelper = (function () {
         }
     }
 
-    function createContainingComp(sourceData) {
+    function createContainingComp(sourceData, generation) {
+        if (!isRenderGenerationActive(generation)) {
+            return;
+        }
         var containingComp = sourceData.item.containingComp
         var layer = sourceData.item
         containingCompCopy = duplicateComposition(containingComp, layer);
@@ -240,20 +249,20 @@ $.__bodymovin.bm_audioSourceHelper = (function () {
         outputModule.file = file;
         
         item.onStatusChanged = function() {
-            if (item.status === RQItemStatus.DONE) {
+            if (item.status === RQItemStatus.DONE && isRenderGenerationActive(generation)) {
                 updateCurrentSecond();
                 currentExportingAudioIndex += 1;
 
                 if (settingsHelper.shouldEncodeImages()) {
                     bm_eventDispatcher.sendEvent('bm:image:process', {
                         path: file.fsName, 
-                        should_compress: false, 
-                        compression_rate: 100,
+                        png_palette_colors: 0,
                         should_encode_images: settingsHelper.shouldEncodeImages(),
                         assetType: 'audio',
+                        render_generation: generation,
                     });
                 } else {
-                    app.scheduleTask('$.__bodymovin.bm_audioSourceHelper.scheduleNextSave();', 20, false);
+                    app.scheduleTask('$.__bodymovin.bm_audioSourceHelper.scheduleNextSave(' + generation + ');', 20, false);
                 }
             }
         };
@@ -272,13 +281,17 @@ $.__bodymovin.bm_audioSourceHelper = (function () {
     }
 
     function assetProcessed(_, encoded_data) {
+        var generation = currentRenderGeneration;
+        if (!isRenderGenerationActive(generation)) {
+            return;
+        }
         if (encoded_data) {
             var currentSavingAsset = assetsArray[assetsArray.length - 1];
             currentSavingAsset.p = encoded_data;
             currentSavingAsset.u = '';
             currentSavingAsset.e = 1;
             bm_fileManager.removeFile(currentSavingAsset.fileId);
-            app.scheduleTask('$.__bodymovin.bm_audioSourceHelper.scheduleNextSave();', 20, false);
+            app.scheduleTask('$.__bodymovin.bm_audioSourceHelper.scheduleNextSave(' + generation + ');', 20, false);
         }
     }
 
@@ -288,14 +301,20 @@ $.__bodymovin.bm_audioSourceHelper = (function () {
         _lastSecond = newSecond;
     }
 
-    function saveAudio() {
+    function saveAudio(generation) {
+        if (!isRenderGenerationActive(generation)) {
+            return;
+        }
         var currentSourceData = audioSources[currentExportingAudioIndex];
         ////
-        createContainingComp(currentSourceData);
+        createContainingComp(currentSourceData, generation);
         ////
     }
 
-    function scheduleNextSave() {
+    function scheduleNextSave(generation) {
+        if (!isRenderGenerationActive(generation)) {
+            return;
+        }
 
         var now = new Date();
         var newSecond = now.getSeconds();
@@ -303,13 +322,16 @@ $.__bodymovin.bm_audioSourceHelper = (function () {
         if (newSecond !== _lastSecond) {
             _lastSecond = newSecond;
             _lastMilliseconds = newMilliSeconds;
-            saveNextAudio();
+            saveNextAudio(generation);
         } else {
-            app.scheduleTask('$.__bodymovin.bm_audioSourceHelper.scheduleNextSave();', (1000 - _lastMilliseconds), false);
+            app.scheduleTask('$.__bodymovin.bm_audioSourceHelper.scheduleNextSave(' + generation + ');', (1000 - _lastMilliseconds), false);
         }
     }
 
-    function saveNextAudio() {
+    function saveNextAudio(generation) {
+        if (!isRenderGenerationActive(generation)) {
+            return;
+        }
         try {
             containingCompCopy.remove();
             containingCompCopy = null;
@@ -326,21 +348,25 @@ $.__bodymovin.bm_audioSourceHelper = (function () {
             renderQueueHelper.restoreRenderQueue();
             finishCallback();
         } else {
-            saveAudio();
+            saveAudio(generation);
         }
     }
 
-    function reset() {
+    function reset(generation) {
+        currentRenderGeneration = generation;
         audioSources.length = 0;
         audioCount = 0;
         currentExportingAudioIndex = 0;
     }
 
-    function save(_callback, _assetsArray) {
+    function save(_callback, _assetsArray, generation) {
+        if (!isRenderGenerationActive(generation)) {
+            return;
+        }
         assetsArray = _assetsArray;
         finishCallback = _callback;
         if (audioSources.length > 0) {
-            saveNextAudio();
+            saveNextAudio(generation);
         } else {
             finishCallback();
         }

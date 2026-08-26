@@ -14,18 +14,16 @@ $.__bodymovin.bm_textAnimatorsReport = (function () {
     var defaultRenderers = [
         rendererTypes.BROWSER,
         rendererTypes.IOS,
-        rendererTypes.ANDROID,
-        rendererTypes.SKOTTIE
+        rendererTypes.ANDROID
     ];
     var onlyBrowserRenderers = [
         rendererTypes.IOS,
-        rendererTypes.ANDROID,
-        rendererTypes.SKOTTIE
+        rendererTypes.ANDROID
     ];
-    var onlySkottieRenderers = [
+    var allRetainedRenderers = [
         rendererTypes.BROWSER,
         rendererTypes.IOS,
-        rendererTypes.ANDROID,
+        rendererTypes.ANDROID
     ];
 
     var defaultMessageType = messageTypes.ERROR;
@@ -52,7 +50,7 @@ $.__bodymovin.bm_textAnimatorsReport = (function () {
             ]
         },
         'ADBE Text Blur': {
-            renderers: onlySkottieRenderers,
+            renderers: allRetainedRenderers,
         },
         'ADBE Text Anchor Point 3D': {
             renderers: onlyBrowserRenderers,

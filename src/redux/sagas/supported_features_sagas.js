@@ -1,5 +1,5 @@
 import { call, takeEvery, take , race, select, put } from 'redux-saga/effects'
-import { delay } from 'redux-saga'
+import { delay } from 'redux-saga/effects'
 import actions from '../actions/actionTypes'
 import {
 	getSelectedProperties,	

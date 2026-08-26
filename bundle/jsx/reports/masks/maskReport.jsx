@@ -31,7 +31,6 @@ $.__bodymovin.bm_maskReportFactory = (function () {
             this.addMessage(messageTypes.ERROR,
             [
                 rendererTypes.BROWSER,
-                rendererTypes.SKOTTIE,
                 rendererTypes.IOS,
                 rendererTypes.ANDROID,
             ],
@@ -45,7 +44,6 @@ $.__bodymovin.bm_maskReportFactory = (function () {
         if (this.opacity.checkModifiedValue(100)) {
             this.opacity.addMessage(messageTypes.ERROR,
             [
-                rendererTypes.SKOTTIE,
                 rendererTypes.IOS,
                 rendererTypes.ANDROID,
             ],
@@ -55,7 +53,6 @@ $.__bodymovin.bm_maskReportFactory = (function () {
         if (this.expansion.checkModifiedValue(0)) {
             this.expansion.addMessage(messageTypes.ERROR,
             [
-                rendererTypes.SKOTTIE,
                 rendererTypes.IOS,
                 rendererTypes.ANDROID,
             ],
@@ -66,7 +63,6 @@ $.__bodymovin.bm_maskReportFactory = (function () {
             this.feather.addMessage(messageTypes.ERROR,
             [
                 rendererTypes.BROWSER,
-                rendererTypes.SKOTTIE,
                 rendererTypes.IOS,
                 rendererTypes.ANDROID,
             ],

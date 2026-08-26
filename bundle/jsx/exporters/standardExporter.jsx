@@ -6,7 +6,6 @@ $.__bodymovin.bm_standardExporter = (function () {
 	var bm_fileManager = $.__bodymovin.bm_fileManager;
 	var exporterHelpers = $.__bodymovin.bm_exporterHelpers;
 	var bm_eventDispatcher = $.__bodymovin.bm_eventDispatcher;
-	var settingsHelper = $.__bodymovin.bm_settingsHelper;
 	var ob = {}
 	var _callback;
 	var _destinationData;
@@ -15,6 +14,8 @@ $.__bodymovin.bm_standardExporter = (function () {
 
 		var rawFiles = bm_fileManager.getFilesOnPath(['raw']);
 		var i = 0, len = rawFiles.length;
+		var copiedFileIds = [];
+		try {
 		while(i < len) {
 			var fileData = bm_fileManager.getFileById(rawFiles[i].id);
 			if (fileData) {
@@ -28,16 +29,29 @@ $.__bodymovin.bm_standardExporter = (function () {
 						j += 1;
 					}
 					var destinationFileData = bm_fileManager.createFile(fileData.name, destinationFolder);
-					file.copy(destinationFileData.file.fsName);
+					copiedFileIds.push(destinationFileData.id);
+					exporterHelpers.copyFile(file, destinationFileData.file);
 				}
 			}
 			i += 1;
+		}
+		} catch (error) {
+			for (i = 0; i < copiedFileIds.length; i += 1) {
+				try {
+					bm_fileManager.removeFile(copiedFileIds[i]);
+				} catch (cleanupError) {
+					// Cleanup must not obscure the original copy error.
+				}
+			}
+			throw error;
 		}
 	}
 
 	function moveAssetsToDestination() {
 		var rawFiles = bm_fileManager.getFilesOnPath(['standard']);
 		var i = 0, len = rawFiles.length;
+		var copiedFiles = [];
+		try {
 		while(i < len) {
 			var fileData = bm_fileManager.getFileById(rawFiles[i].id);
 			if (fileData) {
@@ -48,24 +62,38 @@ $.__bodymovin.bm_standardExporter = (function () {
 					var destinationFolder = new Folder(_destinationData.folder.fsName);
 					while (j < jLen) {
 						destinationFolder.changePath(filePath[j]);
-						if (!destinationFolder.exists) {
-							destinationFolder.create();
-						}
+						exporterHelpers.ensureFolder(destinationFolder);
 						j += 1;
 					}
 					var destinationFile = new File(destinationFolder.fsName);
 					destinationFile.changePath(fileData.name);
-					file.copy(destinationFile.fsName);
+					exporterHelpers.copyFile(file, destinationFile);
+					copiedFiles.push(destinationFile);
 				}
 			}
 			i += 1;
 		}
-		_callback(exporterHelpers.exportTypes.STANDARD, exporterHelpers.exportStatuses.SUCCESS);
+		} catch (error) {
+			for (i = 0; i < copiedFiles.length; i += 1) {
+				exporterHelpers.removeQuietly(copiedFiles[i]);
+			}
+			throw error;
+		}
+		finish(exporterHelpers.exportStatuses.SUCCESS);
+	}
+
+	function finish(status) {
+		if (_callback) {
+			var callback = _callback;
+			_callback = null;
+			callback(exporterHelpers.exportTypes.STANDARD, status);
+		}
 	}
 	
 	function save(destinationPath, config, callback) {
 
 		_callback = callback;
+		try {
 
 		if (config.export_modes.standard) {
 			_destinationData = exporterHelpers.parseDestination(destinationPath, '');
@@ -93,51 +121,36 @@ $.__bodymovin.bm_standardExporter = (function () {
 				
 			} 
 			
-			/*
-			Not converting props for now
-				else if (true) {
-					var temporaryFolder = bm_fileManager.getTemporaryFolder();
-					var originFolder = new Folder(temporaryFolder.fsName);
-					var destinationFolder = new Folder(temporaryFolder.fsName);
-					destinationFolder.changePath('standard');
-					originFolder.changePath('raw');
-					bm_eventDispatcher.sendEvent('bm:create:slots', 
-					{
-						origin: originFolder.fsName, 
-						fileName: _destinationData.fileName,
-						destination: destinationFolder.fsName,
-						prettyPrint: settingsHelper.shouldPrettyPrint(),
-					});
-				}
-			*/
 			else {
 				moveAssetsToDestination();
 			}
 
 		} else {
-			_callback(exporterHelpers.exportTypes.STANDARD, exporterHelpers.exportStatuses.SUCCESS);
+			finish(exporterHelpers.exportStatuses.SUCCESS);
+		}
+		} catch (error) {
+			finish(exporterHelpers.exportStatuses.FAILED);
 		}
 
-	}
-
-	function slotsSuccess() {
-		moveAssetsToDestination();
 	}
 
 	function splitSuccess(totalSegments) {
-		for (var i = 0; i < totalSegments; i += 1) {
-			bm_fileManager.createFile(_destinationData.fileName  + '_' + i + '.json', ['standard']);
+		try {
+			for (var i = 0; i < totalSegments; i += 1) {
+				bm_fileManager.createFile(_destinationData.fileName  + '_' + i + '.json', ['standard']);
+			}
+			moveAssetsToDestination();
+		} catch (error) {
+			finish(exporterHelpers.exportStatuses.FAILED);
 		}
-		moveAssetsToDestination();
 	}
 
 	function splitFailed() {
-		_callback(exporterHelpers.exportTypes.STANDARD, exporterHelpers.exportStatuses.FAILED);
+		finish(exporterHelpers.exportStatuses.FAILED);
 	}
 
 	ob.save = save;
 	ob.splitSuccess = splitSuccess;
-	ob.slotsSuccess = slotsSuccess;
 	ob.splitFailed = splitFailed;
 	
 	return ob;

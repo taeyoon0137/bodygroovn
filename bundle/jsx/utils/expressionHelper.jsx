@@ -9,6 +9,7 @@ $.__bodymovin.bm_expressionHelper = (function () {
     var expressionStr;
     var renderingExpressions = [];
     var onStart, onEnd;
+    var currentRenderGeneration = 0;
 
     function expressionIsValue(expression) {
         if(expression === 'value') {
@@ -33,6 +34,7 @@ $.__bodymovin.bm_expressionHelper = (function () {
                 id: generalUtils.random(10),
                 ob: returnOb,
                 text: expressionStr,
+                render_generation: currentRenderGeneration,
             }
             bm_eventDispatcher.sendEvent('bm:expression:process', objectData);
             renderingExpressions.push(objectData);
@@ -50,9 +52,10 @@ $.__bodymovin.bm_expressionHelper = (function () {
     }
 
     function saveExpression(expressionData, id) {
-        var i = 0, len = renderingExpressions.length;
+        var i = 0, len = renderingExpressions.length, didFindExpression = false;
         for (i = 0; i < len; i += 1) {
             if (renderingExpressions[i].id === id) {
+                didFindExpression = true;
                 var keyframeOb = renderingExpressions[i].ob;
                 if (expressionData.isStatic) {
                     keyframeOb.a = 0;
@@ -64,7 +67,7 @@ $.__bodymovin.bm_expressionHelper = (function () {
                 break;
             }
         }
-        if (renderingExpressions.length === 0) {
+        if (didFindExpression && renderingExpressions.length === 0) {
             onEnd();
         }
     }
@@ -73,7 +76,8 @@ $.__bodymovin.bm_expressionHelper = (function () {
         return renderingExpressions.length === 0;
     }
 
-    function reset() {
+    function reset(generation) {
+        currentRenderGeneration = generation;
         renderingExpressions = [];
     }
 

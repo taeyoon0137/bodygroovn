@@ -24,7 +24,6 @@ $.__bodymovin.bm_lightLayerReport = (function () {
                 rendererTypes.BROWSER,
                 rendererTypes.IOS,
                 rendererTypes.ANDROID,
-                rendererTypes.SKOTTIE,
             ],
             builderTypes.LIGHT_LAYER);
     }

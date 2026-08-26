@@ -8,8 +8,8 @@ $.__bodymovin.bm_reportsManager = (function () {
     var bm_eventDispatcher = $.__bodymovin.bm_eventDispatcher;
     var compsManager = $.__bodymovin.bm_compsManager;
 
-    function createReport(animation, onReportComplete, onReportFail) {
-    	var animationReport = animationReportFactory(animation, onReportComplete, onReportFail);
+    function createReport(animation, onReportComplete, onReportFail, isActive) {
+        var animationReport = animationReportFactory(animation, onReportComplete, onReportFail, isActive);
     }
 
     function createReportFromCompositionId(compositionId) {

@@ -17,13 +17,11 @@ import settingsSelector from '../selectors/settings_selector'
 import globalSettingsSelector from '../selectors/global_settings_selector'
 import {
 	applySettingsFromCache,
-	settingsBannerLibraryFileSelected,
 	settingsDefaultFolderPathSelected,
 	settingsCopyPathPathSelected,
 	settingsLoaded,
 	templateLoaded,
 } from '../actions/compositionActions'
-import fileBrowser from '../../helpers/FileBrowser'
 import folderBrowser from '../../helpers/FolderBrowser'
 import loadBodymovinFileData from '../../helpers/FileLoader'
 import validateTemplate from '../../helpers/templates/template'
@@ -143,17 +141,6 @@ function *applySettings(action) {
 	}
 }
 
-function *searchLottiePath(action) {
-	try{
-		let paths = yield select(storingPathsSelector)
-		const initialPath = action.value ? action.value.path : paths.destinationPath
-		let filePath = yield call(fileBrowser, initialPath)
-		yield put(settingsBannerLibraryFileSelected(filePath))
-	} catch(err) {
-
-	}
-}
-
 function *searchDefaultDestinationPath(action) {
 	try{
 		let paths = yield select(storingPathsSelector)
@@ -227,7 +214,6 @@ export default [
   takeEvery(actions.COMPOSITION_DISPLAY_SETTINGS, goToSettings),
   takeEvery(actions.SETTINGS_REMEMBER, saveSettings),
   takeEvery(actions.SETTINGS_APPLY, applySettings),
-  takeEvery(actions.SETTINGS_BANNER_LIBRARY_FILE_UPDATE, searchLottiePath),
   takeEvery(actions.SETTINGS_DEFAULT_FOLDER_PATH_UPDATE, searchDefaultDestinationPath),
   takeEvery(actions.SETTINGS_COPY_PATH_UPDATE, searchSettingsCopyPath),
   takeEvery(actions.SETTINGS_LOAD, loadSettings),

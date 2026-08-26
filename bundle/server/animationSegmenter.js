@@ -16,8 +16,6 @@ const layerTypes = {
     light : 14
 }
 
-let animationSegments
-
 function random(len) {
     var sequence = 'abcdefghijklmnoqrstuvwxyz1234567890', returnString = '', i;
     for (i = 0; i < len; i += 1) {
@@ -64,7 +62,7 @@ function moveCompsAssetsToCompsArray(data) {
 	data.comps = comps;
 }
 
-function splitAnimation(data, time) {
+function splitAnimation(data, time, animationSegments) {
 	moveCompsAssetsToCompsArray(data);
     var comps = data.comps;
     var layers = data.layers;
@@ -73,7 +71,6 @@ function splitAnimation(data, time) {
     var i, len = layers.length, j, jLen;
     var currentSegment = time * frameRate;
     var segmentLength = time * frameRate;
-    animationSegments = [];
     var currentPeriod, segments, segmentComps;
     for (i = 0; i < len; i += 1) {
         if (layers[i].ip < currentSegment) {
@@ -157,7 +154,8 @@ function splitAnimation(data, time) {
 }
 
 function split(data, time) {
-	splitAnimation(data, time)
+	var animationSegments = [];
+	splitAnimation(data, time, animationSegments)
 	
 	//
 	return {
