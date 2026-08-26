@@ -20,7 +20,7 @@ $.__bodymovin.bm_standaloneExporter = (function () {
 
 	function save(destinationPath, config, callback) {
 		_callback = callback;
-		var savedAssets = [];
+		var transaction = exporterHelpers.createTransaction();
 		try {
 
 		if (config.export_modes.standalone) {
@@ -36,22 +36,23 @@ $.__bodymovin.bm_standaloneExporter = (function () {
 		    animationStringData = bodymovinJsStr.replace("\"__[ANIMATIONDATA]__\"",  animationStringData );
 		    animationStringData = animationStringData.replace("\"__[STANDALONE]__\"", 'true');
 		    
-			savedAssets = exporterHelpers.saveAssets(rawFiles, destinationData.folder);
+			exporterHelpers.saveAssets(rawFiles, destinationData.folder, transaction);
 
-			try {
-			    exporterHelpers.writeTextFile(destinationFile, animationStringData); //DO NOT ERASE, JSON UNFORMATTED
-			    //destinationFile.write(JSON.stringify(ob.renderData.exportData, null, '  ')); //DO NOT ERASE, JSON FORMATTED
-			    finish(exporterHelpers.exportStatuses.SUCCESS);
-			} catch (err) {
-				exporterHelpers.removeFilesQuietly(savedAssets);
-				finish(exporterHelpers.exportStatuses.FAILED);
-			}
+			exporterHelpers.writeTextFile(destinationFile, animationStringData, transaction); //DO NOT ERASE, JSON UNFORMATTED
+			//destinationFile.write(JSON.stringify(ob.renderData.exportData, null, '  ')); //DO NOT ERASE, JSON FORMATTED
+			exporterHelpers.commitTransaction(transaction);
+			finish(exporterHelpers.exportStatuses.SUCCESS);
 		} else {
 			finish(exporterHelpers.exportStatuses.SUCCESS);
 		}
 		} catch (error) {
-			exporterHelpers.removeFilesQuietly(savedAssets);
-			finish(exporterHelpers.exportStatuses.FAILED);
+			try {
+				exporterHelpers.rollbackTransaction(transaction);
+			} catch (rollbackError) {
+				// Preserve failed completion even if Adobe cannot restore a destination.
+			} finally {
+				finish(exporterHelpers.exportStatuses.FAILED);
+			}
 		}
 	}
 

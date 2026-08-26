@@ -9,6 +9,7 @@ $.__bodymovin.bm_standardExporter = (function () {
 	var ob = {}
 	var _callback;
 	var _destinationData;
+	var _transaction;
 
 	function copyAssets() {
 
@@ -50,8 +51,6 @@ $.__bodymovin.bm_standardExporter = (function () {
 	function moveAssetsToDestination() {
 		var rawFiles = bm_fileManager.getFilesOnPath(['standard']);
 		var i = 0, len = rawFiles.length;
-		var copiedFiles = [];
-		try {
 		while(i < len) {
 			var fileData = bm_fileManager.getFileById(rawFiles[i].id);
 			if (fileData) {
@@ -67,19 +66,29 @@ $.__bodymovin.bm_standardExporter = (function () {
 					}
 					var destinationFile = new File(destinationFolder.fsName);
 					destinationFile.changePath(fileData.name);
-					exporterHelpers.copyFile(file, destinationFile);
-					copiedFiles.push(destinationFile);
+					exporterHelpers.copyFile(file, destinationFile, _transaction);
 				}
 			}
 			i += 1;
 		}
-		} catch (error) {
-			for (i = 0; i < copiedFiles.length; i += 1) {
-				exporterHelpers.removeQuietly(copiedFiles[i]);
-			}
-			throw error;
-		}
+		exporterHelpers.commitTransaction(_transaction);
+		_transaction = null;
 		finish(exporterHelpers.exportStatuses.SUCCESS);
+	}
+
+	function fail() {
+		if (_transaction) {
+			try {
+				exporterHelpers.rollbackTransaction(_transaction);
+			} catch (rollbackError) {
+				// Preserve failed completion even if Adobe cannot restore a destination.
+			} finally {
+				_transaction = null;
+				finish(exporterHelpers.exportStatuses.FAILED);
+			}
+		} else {
+			finish(exporterHelpers.exportStatuses.FAILED);
+		}
 	}
 
 	function finish(status) {
@@ -93,6 +102,7 @@ $.__bodymovin.bm_standardExporter = (function () {
 	function save(destinationPath, config, callback) {
 
 		_callback = callback;
+		_transaction = exporterHelpers.createTransaction();
 		try {
 
 		if (config.export_modes.standard) {
@@ -126,10 +136,11 @@ $.__bodymovin.bm_standardExporter = (function () {
 			}
 
 		} else {
+			_transaction = null;
 			finish(exporterHelpers.exportStatuses.SUCCESS);
 		}
 		} catch (error) {
-			finish(exporterHelpers.exportStatuses.FAILED);
+			fail();
 		}
 
 	}
@@ -141,12 +152,12 @@ $.__bodymovin.bm_standardExporter = (function () {
 			}
 			moveAssetsToDestination();
 		} catch (error) {
-			finish(exporterHelpers.exportStatuses.FAILED);
+			fail();
 		}
 	}
 
 	function splitFailed() {
-		finish(exporterHelpers.exportStatuses.FAILED);
+		fail();
 	}
 
 	ob.save = save;

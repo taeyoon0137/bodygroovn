@@ -6,6 +6,7 @@ $.__bodymovin.bm_exporterHelpers = (function () {
 	var bm_fileManager = $.__bodymovin.bm_fileManager;
 	var bm_eventDispatcher = $.__bodymovin.bm_eventDispatcher;
 	var JSON = $.__bodymovin.JSON;
+	var temporaryFileCounter = 0;
 
 	var ob = {}
 
@@ -29,6 +30,108 @@ $.__bodymovin.bm_exporterHelpers = (function () {
 		} catch (error) {
 			// Cleanup must not obscure the original I/O error.
 		}
+	}
+
+	function createSiblingTemporaryFile(destinationFile, label) {
+		var temporaryFile;
+		do {
+			temporaryFileCounter += 1;
+			temporaryFile = new File(destinationFile.fsName + '.bodygroovn-' + label + '-' + temporaryFileCounter);
+		} while (temporaryFile.exists);
+		return temporaryFile;
+	}
+
+	function createTransaction() {
+		return {
+			records: [],
+		};
+	}
+
+	function commitRecord(record) {
+		if (record.backupFile) {
+			removeQuietly(record.backupFile);
+		}
+	}
+
+	function rollbackRecord(record) {
+		var rollbackError;
+		try {
+			assertSuccess(record.outputFile.remove(), 'Could not remove failed output: ' + record.outputFile.fsName);
+		} catch (error) {
+			rollbackError = error;
+		}
+		if (record.backupFile) {
+			try {
+				assertSuccess(record.backupFile.rename(record.destinationName), 'Could not restore existing file: ' + record.outputFile.fsName);
+			} catch (restoreError) {
+				rollbackError = rollbackError || restoreError;
+			}
+		}
+		if (rollbackError) {
+			throw rollbackError;
+		}
+	}
+
+	function commitTransaction(transaction) {
+		for (var i = 0; i < transaction.records.length; i += 1) {
+			commitRecord(transaction.records[i]);
+		}
+		transaction.records = [];
+	}
+
+	function rollbackTransaction(transaction) {
+		var rollbackError;
+		for (var i = transaction.records.length - 1; i >= 0; i -= 1) {
+			try {
+				rollbackRecord(transaction.records[i]);
+			} catch (error) {
+				rollbackError = rollbackError || error;
+			}
+		}
+		transaction.records = [];
+		if (rollbackError) {
+			throw rollbackError;
+		}
+	}
+
+	function replaceWithTemporaryFile(destinationFile, temporaryFile, transaction) {
+		var destinationExisted = destinationFile.exists;
+		var destinationFsName = destinationFile.fsName;
+		var destinationName = destinationFile.name;
+		var backupFile;
+
+		if (destinationExisted) {
+			backupFile = createSiblingTemporaryFile(destinationFile, 'backup');
+			assertSuccess(destinationFile.rename(backupFile.name), 'Could not prepare existing file for replacement: ' + destinationFile.fsName);
+		}
+
+		try {
+			assertSuccess(temporaryFile.rename(destinationName), 'Could not replace file: ' + destinationFile.fsName);
+		} catch (error) {
+			var restoreError;
+			if (destinationExisted) {
+				if (backupFile.rename(destinationName) === false) {
+					restoreError = new Error('Could not restore existing file after replacement failure: ' + destinationFile.fsName);
+				}
+			}
+			removeQuietly(temporaryFile);
+			if (restoreError) {
+				throw restoreError;
+			}
+			throw error;
+		}
+
+		var record = {
+			backupFile: backupFile,
+			destinationName: destinationName,
+			outputFile: new File(destinationFsName),
+		};
+		if (transaction) {
+			transaction.records.push(record);
+		} else {
+			commitRecord(record);
+		}
+		return !destinationExisted;
 	}
 
 	function ensureFolder(folder) {
@@ -55,29 +158,33 @@ $.__bodymovin.bm_exporterHelpers = (function () {
 		}
 	}
 
-	function writeTextFile(file, content) {
+	function writeTextFile(file, content, transaction) {
+		var temporaryFile = createSiblingTemporaryFile(file, 'write');
 		var isOpen = false;
 		try {
-			assertSuccess(file.open('w', 'TEXT', '????'), 'Could not open file for writing: ' + file.fsName);
+			assertSuccess(temporaryFile.open('w', 'TEXT', '????'), 'Could not open file for writing: ' + file.fsName);
 			isOpen = true;
-			file.encoding = 'UTF-8';
-			assertSuccess(file.write(content), 'Could not write file: ' + file.fsName);
-			assertSuccess(file.close(), 'Could not close file: ' + file.fsName);
+			temporaryFile.encoding = 'UTF-8';
+			assertSuccess(temporaryFile.write(content), 'Could not write file: ' + file.fsName);
+			assertSuccess(temporaryFile.close(), 'Could not close file: ' + file.fsName);
 			isOpen = false;
+			return replaceWithTemporaryFile(file, temporaryFile, transaction);
 		} catch (error) {
 			if (isOpen) {
-				closeQuietly(file);
+				closeQuietly(temporaryFile);
 			}
-			removeQuietly(file);
+			removeQuietly(temporaryFile);
 			throw error;
 		}
 	}
 
-	function copyFile(file, destinationFile) {
+	function copyFile(file, destinationFile, transaction) {
+		var temporaryFile = createSiblingTemporaryFile(destinationFile, 'copy');
 		try {
-			assertSuccess(file.copy(destinationFile.fsName), 'Could not copy file to: ' + destinationFile.fsName);
+			assertSuccess(file.copy(temporaryFile.fsName), 'Could not copy file to: ' + destinationFile.fsName);
+			return replaceWithTemporaryFile(destinationFile, temporaryFile, transaction);
 		} catch (error) {
-			removeQuietly(destinationFile);
+			removeQuietly(temporaryFile);
 			throw error;
 		}
 	}
@@ -95,11 +202,9 @@ $.__bodymovin.bm_exporterHelpers = (function () {
 		return readTextFile(jsonFile);
 	}
 
-	function saveAssets(rawFiles, destinationFolder) {
+	function saveAssets(rawFiles, destinationFolder, transaction) {
 		var i = 0, len = rawFiles.length;
-		var copiedFiles = [];
 		// TODO improve this solution
-		try {
 		while(i < len) {
 			if(rawFiles[i].type !== 'main') {
 				var fileData = bm_fileManager.getFileById(rawFiles[i].id);
@@ -112,20 +217,12 @@ $.__bodymovin.bm_exporterHelpers = (function () {
 						ensureFolder(destinationFileFolder);
 						var destinationFile = new File(destinationFileFolder.fsName);
 						destinationFile.changePath(file.name);
-						copyFile(file, destinationFile);
-						copiedFiles.push(destinationFile);
+						copyFile(file, destinationFile, transaction);
 					}
 				}
 			}
 			i += 1;
 		}
-		} catch (error) {
-			for (i = 0; i < copiedFiles.length; i += 1) {
-				removeQuietly(copiedFiles[i]);
-			}
-			throw error;
-		}
-		return copiedFiles;
 	}
 
 	function parseDestination(destinationPath, subFolder) {
@@ -150,7 +247,9 @@ $.__bodymovin.bm_exporterHelpers = (function () {
 
 
 	ob.getJsonData = getJsonData;
+	ob.commitTransaction = commitTransaction;
 	ob.copyFile = copyFile;
+	ob.createTransaction = createTransaction;
 	ob.ensureFolder = ensureFolder;
 	ob.removeQuietly = removeQuietly;
 	ob.removeFilesQuietly = function (files) {
@@ -158,6 +257,7 @@ $.__bodymovin.bm_exporterHelpers = (function () {
 			removeQuietly(files[i]);
 		}
 	};
+	ob.rollbackTransaction = rollbackTransaction;
 	ob.saveAssets = saveAssets;
 	ob.parseDestination = parseDestination;
 	ob.writeTextFile = writeTextFile;

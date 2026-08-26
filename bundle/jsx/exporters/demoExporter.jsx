@@ -21,7 +21,7 @@ $.__bodymovin.bm_demoExporter = (function () {
 	function save(destinationPath, config, callback, data) {
 
 		_callback = callback;
-		var savedAssets = [];
+		var transaction = exporterHelpers.createTransaction();
 		try {
 
 		if (config.export_modes.demo) {
@@ -30,7 +30,7 @@ $.__bodymovin.bm_demoExporter = (function () {
 
 			var rawFiles = bm_fileManager.getFilesOnPath(['raw']);
 
-			savedAssets = exporterHelpers.saveAssets(rawFiles, destinationData.folder)
+			exporterHelpers.saveAssets(rawFiles, destinationData.folder, transaction)
 
 	        // var fullFilePathName = destinationPath.substr(destinationPath.lastIndexOf('/') + 1);
 
@@ -49,19 +49,20 @@ $.__bodymovin.bm_demoExporter = (function () {
 
 			var demoDestinationFile = new File(destinationData.folder.fsName);
 			demoDestinationFile.changePath(destinationData.fileName + '.html');
-			try {
-			    exporterHelpers.writeTextFile(demoDestinationFile, demoStr); //DO NOT ERASE, JSON UNFORMATTED
-			    finish(exporterHelpers.exportStatuses.SUCCESS);
-			} catch (errr) {
-				exporterHelpers.removeFilesQuietly(savedAssets);
-			    finish(exporterHelpers.exportStatuses.FAILED);
-			}
+			exporterHelpers.writeTextFile(demoDestinationFile, demoStr, transaction); //DO NOT ERASE, JSON UNFORMATTED
+			exporterHelpers.commitTransaction(transaction);
+			finish(exporterHelpers.exportStatuses.SUCCESS);
 		} else {
 			finish(exporterHelpers.exportStatuses.SUCCESS);
 		}
 		} catch (error) {
-			exporterHelpers.removeFilesQuietly(savedAssets);
-			finish(exporterHelpers.exportStatuses.FAILED);
+			try {
+				exporterHelpers.rollbackTransaction(transaction);
+			} catch (rollbackError) {
+				// Preserve failed completion even if Adobe cannot restore a destination.
+			} finally {
+				finish(exporterHelpers.exportStatuses.FAILED);
+			}
 		}
 	}
 

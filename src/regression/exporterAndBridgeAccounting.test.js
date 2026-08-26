@@ -42,6 +42,7 @@ await import('../helpers/CompositionsProvider')
 
 function loadExporter(fileName, exportType, fileOverrides = {}) {
   const source = fs.readFileSync(`bundle/jsx/exporters/${fileName}Exporter.jsx`, 'utf8')
+  const transaction = {records: []}
   const bodymovin = {
     JSON,
     bm_downloadManager: {
@@ -50,18 +51,20 @@ function loadExporter(fileName, exportType, fileOverrides = {}) {
     },
     bm_eventDispatcher: {sendEvent: vi.fn()},
     bm_exporterHelpers: {
+      commitTransaction: vi.fn(),
+      createTransaction: vi.fn(() => transaction),
       exportStatuses: {FAILED: 'failed', SUCCESS: 'success'},
       exportTypes: {[exportType.toUpperCase()]: exportType},
       getJsonData: () => '{}',
       parseDestination: () => ({fileName: 'animation', folder: {fsName: '/tmp/export'}}),
-      removeFilesQuietly: files => files.forEach(file => file.remove()),
+      rollbackTransaction: vi.fn(),
       saveAssets: vi.fn(() => []),
-      writeTextFile: (file, content) => {
+      writeTextFile: vi.fn((file, content) => {
         if (file.open('w', 'TEXT', '????') === false) throw new Error('open failed')
         file.encoding = 'UTF-8'
         if (file.write(content) === false) throw new Error('write failed')
         if (file.close() === false) throw new Error('close failed')
-      },
+      }),
     },
     bm_fileManager: {getFilesOnPath: () => []},
   }
@@ -123,6 +126,20 @@ describe('retained exporter contracts', () => {
     expect(saveExporter(exporter, exportType, true, data)).toEqual([[exportType, 'success']])
   })
 
+  it.each([
+    ['demo', {}],
+    ['standalone', undefined],
+  ])('commits %s assets and the main file through one transaction', (exportType, data) => {
+    const {bodymovin, exporter} = loadExporter(exportType, exportType)
+
+    expect(saveExporter(exporter, exportType, true, data)).toEqual([[exportType, 'success']])
+    const transaction = bodymovin.bm_exporterHelpers.createTransaction.mock.results[0].value
+    expect(bodymovin.bm_exporterHelpers.saveAssets.mock.calls[0][2]).toBe(transaction)
+    expect(bodymovin.bm_exporterHelpers.writeTextFile.mock.calls[0][2]).toBe(transaction)
+    expect(bodymovin.bm_exporterHelpers.commitTransaction).toHaveBeenCalledWith(transaction)
+    expect(bodymovin.bm_exporterHelpers.rollbackTransaction).not.toHaveBeenCalled()
+  })
+
   it.each(['demo', 'standalone'])('completes a disabled %s export exactly once', exportType => {
     const {exporter} = loadExporter(exportType, exportType)
 
@@ -151,13 +168,11 @@ describe('retained exporter contracts', () => {
     expect(saveExporter(exporter, exportType, true)).toEqual([[exportType, 'failed']])
   })
 
-  it('removes copied demo assets when the final file write fails', () => {
+  it('rolls back copied demo assets when the final file write fails', () => {
     const {bodymovin, exporter} = loadExporter('demo', 'demo', {write: false})
-    const copiedAsset = {remove: vi.fn(() => true)}
-    bodymovin.bm_exporterHelpers.saveAssets = () => [copiedAsset]
 
     expect(saveExporter(exporter, 'demo', true)).toEqual([['demo', 'failed']])
-    expect(copiedAsset.remove).toHaveBeenCalledOnce()
+    expect(bodymovin.bm_exporterHelpers.rollbackTransaction).toHaveBeenCalledOnce()
   })
 })
 
