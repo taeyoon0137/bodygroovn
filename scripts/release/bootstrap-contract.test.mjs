@@ -802,7 +802,7 @@ test('release automation pull requests exercise the secretless Windows signing c
   const workflow = await readRepositoryFile('.github/workflows/develop-ci.yml')
   const signingContract = jobBlock(workflow, 'signing-certificate-contract')
 
-  assert.doesNotMatch(signingContract, /^    if:/m)
+  assert.doesNotMatch(signingContract, /^ {4}if:/m)
   assert.doesNotMatch(signingContract, /\bsecrets\./)
   assert.match(signingContract, /verify-signing-certificate\.ps1/)
   assert.match(signingContract, /verify-zxp-signature\.ps1/)
