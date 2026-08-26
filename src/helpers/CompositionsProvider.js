@@ -191,7 +191,7 @@ csInterface.addEventListener('bm:split:animation', async function (ev) {
 		if(ev.data) {
 			const data = (typeof ev.data === "string") ? JSON.parse(ev.data) : ev.data
 			////
-			const splitResponse = await splitAnimation(data.origin, data.destination, decodeURIComponent(data.fileName), data.time);
+			const splitResponse = await splitAnimation(data.origin, data.destination, data.fileName, data.time);
 			csInterface.evalScript('$.__bodymovin.bm_standardExporter.splitSuccess(' + splitResponse + ')');
 		} else {
 			throw new Error('Missing data')
