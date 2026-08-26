@@ -13,6 +13,7 @@ import {
 import {
 	getVersionFromExtension,
 	initializeServer,
+	restartServer,
 	saveProjectDataToXMP,
 	getProjectDataFromXMP,
 	setStorageLocation,
@@ -169,14 +170,18 @@ function *pingServer() {
 }
 
 function *start() {
+	let shouldRestart = false
 	while(true) {
-		yield call(initializeServer)
 		try {
+			yield call(shouldRestart ? restartServer : initializeServer)
+			shouldRestart = false
 			yield call(pingServer)
 		} catch (err) {
+			shouldRestart = true
 			yield put({ 
 					type: actions.SERVER_PING_FAIL,
 			})
+			yield call(delay, 1000)
 		}
 	}
 }

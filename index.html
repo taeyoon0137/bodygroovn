@@ -14,17 +14,43 @@
     <div id="root"></div>
     <script>
       (function startBodygroovnNodeBridge() {
-        var nodeRequire = window.cep_node ? window.cep_node.require : window.require;
-        var BufferCtor = nodeRequire('buffer').Buffer;
-        var fs = nodeRequire('fs');
-        var serverModule = nodeRequire(__dirname + '/server/main.js');
-        var controllerPromise = serverModule.createServer();
+        var node = window.cep_node;
+        if (!node || typeof node.require !== 'function' || !node.Buffer) {
+          throw new Error('CEP Node.js is not available.');
+        }
+        var csInterface = new CSInterface();
+        var extensionRoot = csInterface.getSystemPath(SystemPath.EXTENSION);
+        var path = node.require('path');
+        var fs = node.require('fs');
+        var serverModule = node.require(path.join(extensionRoot, 'server', 'main.js'));
+        var controllerPromise = Promise.resolve().then(function () { return serverModule.createServer(); });
+        var restartPromise = null;
+
+        function getConnection() {
+          return controllerPromise.then(function (controller) { return controller.getConnection(); });
+        }
+
+        function restart() {
+          if (!restartPromise) {
+            controllerPromise = controllerPromise
+              .then(function (controller) { return controller.close(); }, function () {})
+              .then(function () { return serverModule.createServer(); });
+            restartPromise = controllerPromise.then(function (controller) { return controller.getConnection(); });
+            restartPromise.then(
+              function () { restartPromise = null; },
+              function () { restartPromise = null; }
+            );
+          }
+          return restartPromise;
+        }
+
         window.__bodygroovnNodeBridge = Object.freeze({
-          getConnection: function () { return controllerPromise.then(function (controller) { return controller.getConnection(); }); },
+          getConnection: getConnection,
+          restart: restart,
           readFileSync: function (filePath) { return fs.readFileSync(filePath); },
           setExportDestination: function (filePath) { return controllerPromise.then(function (controller) { return controller.setExportDestination(filePath); }); },
           statSync: function (filePath) { return fs.statSync(filePath); },
-          writeArrayBuffer: function (filePath, value, callback) { return fs.writeFile(filePath, BufferCtor.from(value), callback); },
+          writeArrayBuffer: function (filePath, value, callback) { return fs.writeFile(filePath, node.Buffer.from(value), callback); },
           writeFile: function () { return fs.writeFile.apply(fs, arguments); },
           existsSync: function (filePath) { return fs.existsSync(filePath); },
           mkdirSync: function (filePath) { return fs.mkdirSync(filePath); }

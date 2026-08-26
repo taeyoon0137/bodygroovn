@@ -419,6 +419,13 @@ async function initializeServer() {
 	await window.__bodygroovnNodeBridge.getConnection();
 }
 
+async function restartServer() {
+	if (!window.__bodygroovnNodeBridge) {
+		throw new Error('The bodygroovn Node bridge is not available.');
+	}
+	await window.__bodygroovnNodeBridge.restart();
+}
+
 function navigateToLayer(compositionId, layerIndex) {
 	extensionLoader.then(function(){
 		var eScript = `
@@ -534,6 +541,7 @@ export {
 	imageProcessed,
 	imageProcessingFailed,
 	initializeServer,
+	restartServer,
 	getProjectPath,
 	navigateToLayer,
 	getCompositionTimelinePosition,
