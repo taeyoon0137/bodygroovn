@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict'
+import {spawnSync} from 'node:child_process'
 import {createHash} from 'node:crypto'
 import {chmod, mkdir, mkdtemp, readFile, rm, writeFile} from 'node:fs/promises'
 import {tmpdir} from 'node:os'
 import {dirname, resolve} from 'node:path'
-import {spawnSync} from 'node:child_process'
 import test from 'node:test'
 import {fileURLToPath} from 'node:url'
 
@@ -793,7 +793,7 @@ test('develop CI covers feature-to-develop and develop-to-main product pull requ
   const expectedCondition = "github.event_name == 'push' || (github.event_name == 'pull_request' && (github.event.pull_request.base.ref == 'develop' || github.event.pull_request.head.ref == 'develop'))"
 
   for (const jobName of ['verify', 'node-17-runtime']) {
-    assert.match(jobBlock(workflow, jobName), new RegExp(`^    if: ${escapeRegExp(expectedCondition)}$`, 'm'))
+    assert.match(jobBlock(workflow, jobName), new RegExp(`^ {4}if: ${escapeRegExp(expectedCondition)}$`, 'm'))
   }
   assert.doesNotMatch(workflow, /github\.event\.pull_request\.head\.ref == 'develop'\)\s*$/m)
 })
