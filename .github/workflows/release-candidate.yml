@@ -97,7 +97,11 @@ jobs:
         run: node scripts/ci/run-yarn.mjs install --immutable
       - name: Require the single approved pending release
         working-directory: source
+        env:
+          BASE_SHA: ${{ needs.inspect.outputs.base_sha }}
         run: |
+          git branch --force main "$BASE_SHA"
+          test "$(git rev-parse main)" = "$BASE_SHA"
           node scripts/ci/run-yarn.mjs changeset status --output "$RUNNER_TEMP/changeset-status.json"
           node scripts/release/assert-changeset-release.mjs "$RUNNER_TEMP/changeset-status.json"
       - name: Create the isolated release commit
