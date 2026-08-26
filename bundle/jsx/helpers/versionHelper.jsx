@@ -4,7 +4,7 @@ $.__bodymovin.bm_versionHelper = (function () {
     var ob = {};
     var _version;
     var compatibilityVersion = '5.12.0';
-    var productVersion = '5.12.0';
+    var productVersion = '6.0.0';
 
     function setVersion(data) {
         _version = data;

@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<ExtensionManifest Version="12.0" ExtensionBundleId="com.bodymovin.bodymovin" ExtensionBundleVersion="5.12.0"
+<ExtensionManifest Version="12.0" ExtensionBundleId="com.bodymovin.bodymovin" ExtensionBundleVersion="6.0.0"
 		ExtensionBundleName="bodygroovn" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
 	<ExtensionList>
-		<Extension Id="com.bodymovin.bodymovin" Version="5.12.0" />
+		<Extension Id="com.bodymovin.bodymovin" Version="6.0.0" />
 	</ExtensionList>
 	<ExecutionEnvironment>
 		<HostList>
