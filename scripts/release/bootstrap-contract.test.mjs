@@ -405,6 +405,104 @@ process.exit(64)
   }
 }
 
+const createManualRecoveryClassifierFixture = async (scenario = 'valid') => {
+  const root = await mkdtemp(resolve(tmpdir(), 'bodygroovn-recovery-classifier-'))
+  const candidate = resolve(root, 'candidate')
+  const bin = resolve(root, 'bin')
+  const logPath = resolve(root, 'commands.log')
+  await Promise.all([mkdir(candidate), mkdir(bin)])
+
+  const baseSha = '88a43b7099612335fb5eb315eda1dccaee4a736d'
+  const headSha = 'bf5b1e555e40f36dc3e2dfebfd11f0c01c5a97a0'
+  const releaseCommit = 'e8aaded4e1d9b68ca115db11dab1bc42b3d62df2'
+  const mergeCommit = 'dfeff65e18ef286f9fc73afcea256dc640450b04'
+  const workflowCommit = 'a'.repeat(40)
+  const recoveryCommit = 'c'.repeat(40)
+  const zxpDigest = 'e35c4bdd99bbc9032b52a9cd061f902da861f213d33f8096a9e891345e1f03b9'
+  await writeFile(resolve(candidate, 'release-provenance.json'), `${JSON.stringify({
+    pullRequest: {number: 4, base: {sha: baseSha}, head: {sha: headSha}},
+    candidate: {runId: '32945716114', runAttempt: '1'},
+    release: {commit: releaseCommit, tree: '4'.repeat(40)},
+    artifacts: {'bodygroovn-v6.0.0.zxp': zxpDigest},
+  })}\n`)
+
+  const fakeGit = `#!/usr/bin/env node
+const fs = require('node:fs')
+const args = process.argv.slice(2)
+fs.appendFileSync(process.env.FAKE_COMMAND_LOG, JSON.stringify(['git', ...args]) + '\\n')
+const base = '${baseSha}'
+const head = '${headSha}'
+const merge = '${mergeCommit}'
+const workflow = '${workflowCommit}'
+const recovery = '${recoveryCommit}'
+const scenario = process.env.FAKE_RECOVERY_SCENARIO
+if (args[0] === 'ls-remote') { console.log(workflow + '\\trefs/heads/main'); process.exit(0) }
+if (args[0] === 'cat-file' && args[1] === '-e') process.exit(0)
+if (args[0] === 'show' && args[1] === '-s') {
+  const commit = args.at(-1)
+  if (commit === merge) console.log(merge + ' ' + (scenario === 'wrong-parents' ? head + ' ' + base : base + ' ' + head))
+  else if (commit === workflow) console.log(workflow + ' ' + merge + ' ' + recovery)
+  else if (commit === recovery) console.log(recovery + ' ' + merge)
+  else process.exit(65)
+  process.exit(0)
+}
+if (args[0] === 'rev-parse') {
+  const object = args[1]
+  if (object === merge + '^{tree}') console.log(scenario === 'wrong-tree' ? '8'.repeat(40) : '7'.repeat(40))
+  else if (object === head + '^{tree}') console.log('7'.repeat(40))
+  else if (object === workflow + '^{tree}' || object === recovery + '^{tree}') console.log('9'.repeat(40))
+  else process.exit(66)
+  process.exit(0)
+}
+if (args[0] === 'diff' && args[1] === '--name-status' && args[2] === '--no-renames') {
+  console.log('M\\t.github/workflows/release-finalize.yml')
+  console.log('M\\tscripts/release/bootstrap-contract.test.mjs')
+  console.log('M\\tscripts/release/finalize-release.sh')
+  if (scenario === 'unauthorized-file') console.log('M\\tREADME.md')
+  process.exit(0)
+}
+console.error('Unsupported fake git invocation:', args)
+process.exit(64)
+`
+  const fakeGh = `#!/usr/bin/env node
+const fs = require('node:fs')
+const args = process.argv.slice(2)
+fs.appendFileSync(process.env.FAKE_COMMAND_LOG, JSON.stringify(['gh', ...args]) + '\\n')
+if (args[0] === 'api' && args[1] === 'repos/taeyoon0137/bodygroovn/pulls/4' && args[2] === '--jq' && args[3] === '.merge_commit_sha') {
+  console.log('${mergeCommit}')
+  process.exit(0)
+}
+process.exit(64)
+`
+  await Promise.all([
+    writeFile(resolve(bin, 'git'), fakeGit),
+    writeFile(resolve(bin, 'gh'), fakeGh),
+  ])
+  await Promise.all([chmod(resolve(bin, 'git'), 0o755), chmod(resolve(bin, 'gh'), 0o755)])
+
+  return {
+    root,
+    workflowCommit,
+    logPath,
+    run: () => spawnSync(
+      'bash',
+      [resolve(repositoryRoot, 'scripts/release/finalize-release.sh'), '--classify-only', candidate],
+      {
+        cwd: root,
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          GH_REPO: 'taeyoon0137/bodygroovn',
+          GITHUB_SHA: workflowCommit,
+          FAKE_COMMAND_LOG: logPath,
+          FAKE_RECOVERY_SCENARIO: scenario,
+          PATH: `${bin}:${process.env.PATH}`,
+        },
+      },
+    ),
+  }
+}
+
 test('verify-pr-source accepts an open same-repository develop-to-main pull request', async () => {
   const pullRequest = validPullRequest()
   const result = await runPullRequestVerifier(pullRequest)
@@ -503,6 +601,44 @@ test('finalizer reads dotted artifact filenames as literal provenance keys', asy
     await rm(fixture.root, {recursive: true, force: true})
   }
 })
+
+test('finalizer classification accepts only the exact one-shot manual-merge recovery graph', async () => {
+  const fixture = await createManualRecoveryClassifierFixture()
+  try {
+    const result = fixture.run()
+
+    assert.equal(result.status, 0, result.stderr || result.stdout)
+    assert.equal(result.stdout, `manual-merge:${fixture.workflowCommit}\n`)
+    const calls = (await readFile(fixture.logPath, 'utf8')).trim().split('\n').map(JSON.parse)
+    assert.ok(calls.some(args => args[0] === 'gh' && args.includes('repos/taeyoon0137/bodygroovn/pulls/4')))
+    assert.ok(calls.some(args => args[0] === 'git' && args[1] === 'diff'))
+    for (const args of calls) {
+      assert.ok(!args.includes('push'), 'Classification-only mode must not push')
+      assert.ok(!args.includes('tag'), 'Classification-only mode must not create a tag')
+      assert.ok(!args.includes('--method'), 'Classification-only mode must not mutate GitHub state')
+    }
+  } finally {
+    await rm(fixture.root, {recursive: true, force: true})
+  }
+})
+
+for (const [scenario, message] of [
+  ['wrong-parents', /parents do not match/],
+  ['wrong-tree', /tree does not match/],
+  ['unauthorized-file', /outside the exact trusted recovery set/],
+]) {
+  test(`finalizer classification rejects manual-merge recovery with ${scenario}`, async () => {
+    const fixture = await createManualRecoveryClassifierFixture(scenario)
+    try {
+      const result = fixture.run()
+
+      assert.notEqual(result.status, 0)
+      assert.match(result.stderr, message)
+    } finally {
+      await rm(fixture.root, {recursive: true, force: true})
+    }
+  })
+}
 
 test('finalizer rejects a release bundle whose commit has an extra parent', async () => {
   const fixture = await createFinalizerFixture({extraReleaseParent: true})
@@ -1011,12 +1147,20 @@ test('release finalizer has no automated After Effects matrix gate', async () =>
   }
 })
 
-test('release finalizer leases main against the pull request base SHA', async () => {
-  const script = await readRepositoryFile('scripts/release/finalize-release.sh')
+test('release finalizer reuses one classifier and leases the exact classified main tip', async () => {
+  const [script, workflow] = await Promise.all([
+    readRepositoryFile('scripts/release/finalize-release.sh'),
+    readRepositoryFile('.github/workflows/release-finalize.yml'),
+  ])
 
   assert.match(script, /pr_base=.*json_value pullRequest base sha/)
-  assert.match(script, /--force-with-lease=["']?refs\/heads\/main:\$pr_base/)
+  assert.match(script, /if \[\[ "\$classification_only" == true \]\]; then\s+classify_remote_main\s+exit 0/)
+  assert.match(script, /main_classification=\$\(classify_remote_main\)/)
+  assert.match(script, /--force-with-lease=["']?refs\/heads\/main:\$remote_main/)
+  assert.doesNotMatch(script, /--force-with-lease=["']?refs\/heads\/main:\$pr_base/)
   assert.doesNotMatch(script, /--force-with-lease=["']?refs\/heads\/main:\$trigger_sha/)
+  assert.match(workflow, /finalize-release\.sh --classify-only candidate/)
+  assert.doesNotMatch(workflow, /test "\$remote_main" = "\$base_sha" \|\| test "\$remote_main" = "\$release_sha"/)
 })
 
 test('release finalizer publishes exactly the ZXP and its SHA-256 sidecar', async () => {

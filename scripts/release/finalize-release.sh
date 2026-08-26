@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+classification_only=false
+if [[ "${1:-}" == --classify-only ]]; then
+  classification_only=true
+  shift
+fi
 candidate_dir=${1:?candidate directory is required}
 provenance="$candidate_dir/release-provenance.json"
 bundle="$candidate_dir/bodygroovn-v6.0.0.git.bundle"
@@ -24,6 +29,85 @@ release_body=$(printf 'First independently maintained bodygroovn release.\n\nPul
 
 file_digest() {
   node -e 'const fs=require("node:fs");const crypto=require("node:crypto");process.stdout.write(crypto.createHash("sha256").update(fs.readFileSync(process.argv[1])).digest("hex"))' "$1"
+}
+
+classify_remote_main() {
+  local current_main merge_commit workflow_commit recovery_commit parents changed_paths
+  local first_parent extra_parent
+  current_main=$(git ls-remote origin refs/heads/main | cut -f1)
+  [[ "$current_main" =~ ^[0-9a-f]{40}$ ]] || {
+    echo 'Remote main does not resolve to a commit' >&2
+    return 1
+  }
+
+  if [[ "$current_main" == "$pr_base" ]]; then
+    printf 'base:%s\n' "$current_main"
+    return 0
+  fi
+  if [[ "$current_main" == "$release_sha" ]]; then
+    printf 'release:%s\n' "$current_main"
+    return 0
+  fi
+
+  [[ "${GITHUB_SHA:-}" =~ ^[0-9a-f]{40}$ && "$current_main" == "$GITHUB_SHA" ]] || {
+    echo 'Remote main is neither a normal release state nor the dispatched workflow commit' >&2
+    return 1
+  }
+  workflow_commit=$current_main
+  merge_commit=$(gh api "repos/$GH_REPO/pulls/$pr_number" --jq .merge_commit_sha)
+  [[ "$merge_commit" =~ ^[0-9a-f]{40}$ ]] || {
+    echo 'Merged pull request does not expose an exact merge commit' >&2
+    return 1
+  }
+  [[ "$pr_number" == 4 \
+    && "$candidate_run" == 32945716114 \
+    && "$candidate_attempt" == 1 \
+    && "$pr_base" == 88a43b7099612335fb5eb315eda1dccaee4a736d \
+    && "$pr_head" == bf5b1e555e40f36dc3e2dfebfd11f0c01c5a97a0 \
+    && "$release_sha" == e8aaded4e1d9b68ca115db11dab1bc42b3d62df2 \
+    && "$merge_commit" == dfeff65e18ef286f9fc73afcea256dc640450b04 \
+    && "$zxp_digest" == e35c4bdd99bbc9032b52a9cd061f902da861f213d33f8096a9e891345e1f03b9 ]] || {
+    echo 'Manual-merge recovery does not match the one-shot v6.0.0 candidate identity' >&2
+    return 1
+  }
+  if ! git cat-file -e "$pr_base^{commit}" 2>/dev/null \
+    || ! git cat-file -e "$pr_head^{commit}" 2>/dev/null \
+    || ! git cat-file -e "$merge_commit^{commit}" 2>/dev/null \
+    || ! git cat-file -e "$workflow_commit^{commit}" 2>/dev/null; then
+    echo 'Manual-merge recovery graph is incomplete' >&2
+    return 1
+  fi
+  [[ "$(git show -s --format='%H %P' "$merge_commit")" == "$merge_commit $pr_base $pr_head" ]] || {
+    echo 'Merged pull request commit parents do not match the recorded base and tested head' >&2
+    return 1
+  }
+  [[ "$(git rev-parse "$merge_commit^{tree}")" == "$(git rev-parse "$pr_head^{tree}")" ]] || {
+    echo 'Merged pull request commit tree does not match the tested head' >&2
+    return 1
+  }
+
+  parents=$(git show -s --format='%H %P' "$workflow_commit")
+  read -r _ first_parent recovery_commit extra_parent <<<"$parents"
+  [[ -z "${extra_parent:-}" && "$first_parent" == "$merge_commit" \
+    && "$recovery_commit" =~ ^[0-9a-f]{40}$ ]] || {
+    echo 'Workflow commit is not the exact two-parent recovery merge' >&2
+    return 1
+  }
+  [[ "$(git show -s --format='%H %P' "$recovery_commit")" == "$recovery_commit $merge_commit" ]] || {
+    echo 'Recovery commit does not have only the merged pull request commit as its parent' >&2
+    return 1
+  }
+  [[ "$(git rev-parse "$workflow_commit^{tree}")" == "$(git rev-parse "$recovery_commit^{tree}")" ]] || {
+    echo 'Workflow merge tree does not match the recovery commit tree' >&2
+    return 1
+  }
+  changed_paths=$(git diff --name-status --no-renames "$merge_commit..$workflow_commit" | LC_ALL=C sort)
+  [[ "$changed_paths" == $'M\t.github/workflows/release-finalize.yml\nM\tscripts/release/bootstrap-contract.test.mjs\nM\tscripts/release/finalize-release.sh' ]] || {
+    echo 'Manual-merge recovery changes files outside the exact trusted recovery set' >&2
+    return 1
+  }
+
+  printf 'manual-merge:%s\n' "$current_main"
 }
 
 verify_release_assets() {
@@ -134,6 +218,12 @@ create_release_draft() {
   || { echo 'Invalid candidate numeric identity' >&2; exit 1; }
 [[ "$zxp_digest" =~ ^[0-9a-f]{64}$ ]] \
   || { echo 'Invalid candidate ZXP digest' >&2; exit 1; }
+
+if [[ "$classification_only" == true ]]; then
+  classify_remote_main
+  exit 0
+fi
+
 [[ -f "$bundle" && ! -L "$bundle" && -f "$zxp" && ! -L "$zxp" \
   && -f "$sidecar" && ! -L "$sidecar" ]] \
   || { echo 'Candidate release files are missing or unsafe' >&2; exit 1; }
@@ -170,25 +260,27 @@ if [[ -n "$published_ids_output" ]]; then
   exit 0
 fi
 
-remote_main=$(git ls-remote origin refs/heads/main | cut -f1)
+main_classification=$(classify_remote_main)
+remote_state=${main_classification%%:*}
+remote_main=${main_classification#*:}
 remote_tag=$(git ls-remote origin 'refs/tags/v6.0.0^{}' | cut -f1)
-if [[ "$remote_main" == "$pr_base" ]]; then
+if [[ "$remote_state" == base || "$remote_state" == manual-merge ]]; then
   [[ -z "$remote_tag" ]] || { echo 'v6.0.0 already exists before the atomic release push' >&2; exit 1; }
   git config user.name 'github-actions[bot]'
   git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
   git tag -a v6.0.0 "$release_sha" -m 'Release bodygroovn v6.0.0'
   git push --atomic \
-    --force-with-lease="refs/heads/main:$pr_base" \
+    --force-with-lease="refs/heads/main:$remote_main" \
     origin \
     "$release_sha:refs/heads/main" \
     refs/tags/v6.0.0
-elif [[ "$remote_main" == "$release_sha" ]]; then
+elif [[ "$remote_state" == release ]]; then
   [[ "$remote_tag" == "$release_sha" ]] || {
     echo 'Recovery found release main without the expected tag' >&2
     exit 1
   }
 else
-  echo 'Remote main is neither the pull request base nor the release commit' >&2
+  echo 'Unexpected classified remote main state' >&2
   exit 1
 fi
 

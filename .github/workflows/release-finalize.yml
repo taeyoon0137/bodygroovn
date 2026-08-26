@@ -123,7 +123,6 @@ jobs:
           gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact_id/zip" > "$RUNNER_TEMP/candidate.zip"
           test "sha256:$(sha256sum "$RUNNER_TEMP/candidate.zip" | cut -d' ' -f1)" = "$artifact_digest"
 
-          base_sha=$(node -p "require('./candidate/release-provenance.json').pullRequest.base.sha")
           head_sha=$(node -p "require('./candidate/release-provenance.json').pullRequest.head.sha")
           unsigned_artifact_digest=$(node -p "require('./candidate/release-provenance.json').candidate.unsignedArtifactSha256")
           node scripts/release/verify-candidate.mjs \
@@ -150,9 +149,8 @@ jobs:
           test "$(git rev-parse refs/remotes/candidate/release)" = "$(node -p "require('./candidate/release-provenance.json').release.commit")"
           test "$(git rev-parse refs/remotes/candidate/release^)" = "$head_sha"
           test "$(git rev-parse 'refs/remotes/candidate/release^{tree}')" = "$(node -p "require('./candidate/release-provenance.json').release.tree")"
-          remote_main=$(git ls-remote origin refs/heads/main | cut -f1)
-          release_sha=$(git rev-parse refs/remotes/candidate/release)
-          test "$remote_main" = "$base_sha" || test "$remote_main" = "$release_sha"
+          GH_REPO="$GITHUB_REPOSITORY" \
+            bash scripts/release/finalize-release.sh --classify-only candidate
       - name: Push atomically, then prepare or resume the exact draft and publish
         env:
           GH_TOKEN: ${{ github.token }}
