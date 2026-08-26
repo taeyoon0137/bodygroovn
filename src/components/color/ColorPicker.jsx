@@ -129,16 +129,19 @@ function ColorPicker({ color, onChange, onChangeComplete, presets = DEFAULT_PRES
     <div
       aria-label="Color picker"
       className="bodygroovn-color-picker"
-      onKeyUp={commit}
-      onPointerDown={() => {
-        pointerActiveRef.current = true
-      }}
     >
-      <HexColorPicker
-        color={draftColor}
-        onChange={updateDraft}
-        onChangeEnd={commit}
-      />
+      <div
+        onKeyUp={commit}
+        onPointerDown={() => {
+          pointerActiveRef.current = true
+        }}
+      >
+        <HexColorPicker
+          color={draftColor}
+          onChange={updateDraft}
+          onChangeEnd={commit}
+        />
+      </div>
       <div className="bodygroovn-color-picker__fields">
         <label>
           <span>HEX</span>

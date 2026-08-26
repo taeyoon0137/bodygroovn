@@ -16,7 +16,7 @@ describe('ColorPicker', () => {
       />,
     )
 
-    fireEvent.pointerDown(view.getByLabelText('Color picker'))
+    fireEvent.pointerDown(view.getByRole('slider', { name: 'Color' }))
     fireEvent.change(view.getByLabelText('HEX'), { target: { value: 'abcdef' } })
 
     expect(onChange).toHaveBeenLastCalledWith('#abcdef')
@@ -40,6 +40,23 @@ describe('ColorPicker', () => {
     fireEvent.change(view.getByLabelText('R'), { target: { value: '255' } })
     fireEvent.blur(view.getByLabelText('R'))
     expect(onChangeComplete).toHaveBeenLastCalledWith('#ffb1c2')
+  })
+
+  it('does not commit text entry until the field interaction ends', () => {
+    const onChangeComplete = vi.fn()
+    const view = render(
+      <ColorPicker color="#112233" onChangeComplete={onChangeComplete} />,
+    )
+    const hexInput = view.getByLabelText('HEX')
+
+    fireEvent.change(hexInput, { target: { value: 'a0b1c2' } })
+    fireEvent.keyUp(hexInput, { key: '2' })
+
+    expect(onChangeComplete).not.toHaveBeenCalled()
+
+    fireEvent.blur(hexInput)
+    expect(onChangeComplete).toHaveBeenCalledOnce()
+    expect(onChangeComplete).toHaveBeenCalledWith('#a0b1c2')
   })
 
   it('commits presets immediately and exposes no alpha input', async () => {
