@@ -5,6 +5,7 @@ import { pathToFileURL } from 'node:url'
 const defaultRepositoryRoot = process.cwd()
 
 const removedPaths = [
+  'index_dev.html',
   'bundle/index_server.html',
   'bundle/localserver.html',
   'bundle/assets/player/banner_template.html',
