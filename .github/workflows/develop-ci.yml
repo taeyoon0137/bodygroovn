@@ -98,23 +98,23 @@ jobs:
           github_token: ${{ github.token }}
       - name: Verify the exact mise toolchain
         run: node scripts/ci/check-toolchain.mjs
-      - run: yarn install --immutable
+      - run: node scripts/ci/run-yarn.mjs install --immutable
       - name: Provenance and generated-source checks
         run: |
-          yarn check:csinterface
+          node scripts/ci/run-yarn.mjs check:csinterface
           node scripts/check-provenance.mjs
           node scripts/check-generated.mjs
           node scripts/release/validate-ae-record.mjs release/ae-validation.example.json windows 2025 1 1 2 1
-      - run: yarn version:check
-      - run: yarn lint
-      - run: yarn typecheck
-      - run: yarn test
-      - run: yarn test:server
-      - run: yarn build
+      - run: node scripts/ci/run-yarn.mjs version:check
+      - run: node scripts/ci/run-yarn.mjs lint
+      - run: node scripts/ci/run-yarn.mjs typecheck
+      - run: node scripts/ci/run-yarn.mjs test
+      - run: node scripts/ci/run-yarn.mjs test:server
+      - run: node scripts/ci/run-yarn.mjs build
       - name: Payload and removed-surface checks
         run: |
           node scripts/check-payload.mjs build/bodygroovn
-          yarn check:removed
+          node scripts/ci/run-yarn.mjs check:removed
           git diff --exit-code
 
   node-17-runtime:
@@ -150,8 +150,8 @@ jobs:
           github_token: ${{ github.token }}
       - name: Verify the exact mise toolchain
         run: node scripts/ci/check-toolchain.mjs
-      - run: yarn install --immutable
-      - run: yarn build
+      - run: node scripts/ci/run-yarn.mjs install --immutable
+      - run: node scripts/ci/run-yarn.mjs build
       - name: Download and verify official Node archive
         shell: pwsh
         env:

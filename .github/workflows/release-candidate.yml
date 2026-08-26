@@ -26,11 +26,11 @@ jobs:
           github_token: ${{ github.token }}
       - name: Verify the exact mise toolchain
         run: node scripts/ci/check-toolchain.mjs
-      - run: yarn install --immutable
+      - run: node scripts/ci/run-yarn.mjs install --immutable
       - id: release
         name: Classify pending Changesets
         run: |
-          yarn changeset status --output "$RUNNER_TEMP/changeset-status.json"
+          node scripts/ci/run-yarn.mjs changeset status --output "$RUNNER_TEMP/changeset-status.json"
           node scripts/release/classify-changeset-release.mjs "$RUNNER_TEMP/changeset-status.json" "$GITHUB_OUTPUT"
 
   verify-only:
@@ -47,19 +47,19 @@ jobs:
           github_token: ${{ github.token }}
       - name: Verify the exact mise toolchain
         run: node scripts/ci/check-toolchain.mjs
-      - run: yarn install --immutable
+      - run: node scripts/ci/run-yarn.mjs install --immutable
       - name: Verify without creating a release
         run: |
           node scripts/check-provenance.mjs
           node scripts/check-generated.mjs
-          yarn version:check
-          yarn lint
-          yarn typecheck
-          yarn test
-          yarn test:server
-          yarn build
+          node scripts/ci/run-yarn.mjs version:check
+          node scripts/ci/run-yarn.mjs lint
+          node scripts/ci/run-yarn.mjs typecheck
+          node scripts/ci/run-yarn.mjs test
+          node scripts/ci/run-yarn.mjs test:server
+          node scripts/ci/run-yarn.mjs build
           node scripts/check-payload.mjs build/bodygroovn
-          yarn check:removed
+          node scripts/ci/run-yarn.mjs check:removed
           git diff --exit-code
 
   candidate:
@@ -82,21 +82,21 @@ jobs:
           github_token: ${{ github.token }}
       - name: Verify the exact mise toolchain
         run: node scripts/ci/check-toolchain.mjs
-      - run: yarn install --immutable
+      - run: node scripts/ci/run-yarn.mjs install --immutable
       - name: Require a clean main checkout
         run: |
           if (git status --porcelain) { throw "Candidate checkout is not clean" }
       - name: Require the single approved pending release
         run: |
           $status = Join-Path $env:RUNNER_TEMP changeset-status.json
-          yarn changeset status --output $status
+          node scripts/ci/run-yarn.mjs changeset status --output $status
           node scripts/release/assert-changeset-release.mjs $status
       - name: Create the isolated release commit
         run: |
           $triggerSha = (git rev-parse HEAD).Trim()
-          yarn changeset version
-          yarn version:sync
-          yarn version:check
+          node scripts/ci/run-yarn.mjs changeset version
+          node scripts/ci/run-yarn.mjs version:sync
+          node scripts/ci/run-yarn.mjs version:check
           node scripts/release/assert-version-contract.mjs 6.0.0
           node scripts/release/assert-release-diff.mjs
           git config user.name github-actions[bot]
@@ -110,14 +110,14 @@ jobs:
         run: |
           node scripts/check-provenance.mjs
           node scripts/check-generated.mjs
-          yarn version:check
-          yarn lint
-          yarn typecheck
-          yarn test
-          yarn test:server
-          yarn build
+          node scripts/ci/run-yarn.mjs version:check
+          node scripts/ci/run-yarn.mjs lint
+          node scripts/ci/run-yarn.mjs typecheck
+          node scripts/ci/run-yarn.mjs test
+          node scripts/ci/run-yarn.mjs test:server
+          node scripts/ci/run-yarn.mjs build
           node scripts/check-payload.mjs build/bodygroovn
-          yarn check:removed
+          node scripts/ci/run-yarn.mjs check:removed
           git diff --exit-code
       - name: Run the release tree under CEP Node 17.7.1
         env:

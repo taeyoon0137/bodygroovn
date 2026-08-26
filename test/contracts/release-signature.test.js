@@ -38,6 +38,8 @@ describe('release signature verification contract', () => {
     const config = fs.readFileSync('mise.toml', 'utf8')
     const lock = fs.readFileSync('mise.lock', 'utf8')
     const verifier = fs.readFileSync('scripts/ci/check-toolchain.mjs', 'utf8')
+    const toolchain = fs.readFileSync('scripts/ci/toolchain.mjs', 'utf8')
+    const yarnRunner = fs.readFileSync('scripts/ci/run-yarn.mjs', 'utf8')
     const action = 'jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c'
 
     expect(developWorkflow.match(new RegExp(action, 'g'))).toHaveLength(2)
@@ -49,6 +51,9 @@ describe('release signature verification contract', () => {
     expect(workflows).not.toContain('actions/setup-node@')
     expect(workflows).not.toContain('activate-package-manager.mjs')
     expect(workflows.toLowerCase()).not.toContain('corepack')
+    expect(workflows).not.toMatch(/^\s+yarn\s/m)
+    expect(developWorkflow).toContain('node scripts/ci/run-yarn.mjs build')
+    expect(candidateWorkflow).toContain('node scripts/ci/run-yarn.mjs changeset version')
     expect(config).toContain('node = "24.19.0"')
     expect(config).toContain('"aqua:yarnpkg/berry" = "4.18.0"')
     expect(config).toContain('activate_aggressive = true')
@@ -56,12 +61,15 @@ describe('release signature verification contract', () => {
       expect(config).toContain(`"${platform}"`)
       expect(lock).toContain(`platforms.${platform}`)
     }
-    expect(verifier).toContain("mise: '2026.8.14'")
-    expect(verifier).toContain("node: '24.19.0'")
-    expect(verifier).toContain("yarn: '4.18.0'")
-    expect(verifier).toContain("const YARN_SHA256 = 'fb8b1d20be72a0b544a35bcec4c7ed0ff55a9b173c01f191b02ba164b2051db5'")
-    expect(verifier).toContain("readVersion('mise', ['which', 'yarn'])")
-    expect(verifier).toContain("readFileSync(yarnPath)")
+    expect(toolchain).toContain("mise: '2026.8.14'")
+    expect(toolchain).toContain("node: '24.19.0'")
+    expect(toolchain).toContain("yarn: '4.18.0'")
+    expect(toolchain).toContain("YARN_SHA256 = 'fb8b1d20be72a0b544a35bcec4c7ed0ff55a9b173c01f191b02ba164b2051db5'")
+    expect(toolchain).toContain("readCommand('mise', ['which', 'yarn'])")
+    expect(toolchain).toContain('readFileSync(yarnPath)')
+    expect(verifier).toContain("import {verifyToolchain} from './toolchain.mjs'")
+    expect(yarnRunner).toContain("import {verifyToolchain} from './toolchain.mjs'")
+    expect(yarnRunner).toContain("spawnSync(process.execPath, [yarnPath, ...process.argv.slice(2)]")
   })
 
   it('preserves byte-exact build inputs across platform checkouts', () => {

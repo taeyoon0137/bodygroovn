@@ -59,17 +59,17 @@ The package is signed by the project's fixed self-signed publisher certificate. 
 ```sh
 mise install --locked
 mise exec -- node scripts/ci/check-toolchain.mjs
-mise exec -- yarn install --immutable
+mise exec -- node scripts/ci/run-yarn.mjs install --immutable
 ```
 
-The repository commits `mise.lock` for Linux x64, macOS x64/arm64, and Windows x64. The project config keeps mise's selected tools first in `PATH`, so existing Node managers cannot override the pinned runtime. The toolchain check verifies the downloaded Yarn CLI against SHA-256 `fb8b1d20be72a0b544a35bcec4c7ed0ff55a9b173c01f191b02ba164b2051db5` before executing it. Yarn uses the `node-modules` linker and commits `yarn.lock`. Every CI and release install uses the locked mise toolchain and immutable Yarn dependencies. Do not run Corepack or generate `package-lock.json`.
+The repository commits `mise.lock` for Linux x64, macOS x64/arm64, and Windows x64. The project config keeps mise's selected tools first in `PATH`, so existing Node managers cannot override the pinned runtime. `scripts/ci/run-yarn.mjs` verifies the downloaded Yarn CLI against SHA-256 `fb8b1d20be72a0b544a35bcec4c7ed0ff55a9b173c01f191b02ba164b2051db5`, then runs it with the mise-managed Node executable on every platform. Yarn uses the `node-modules` linker and commits `yarn.lock`. Every CI and release install uses the locked mise toolchain and immutable Yarn dependencies. Do not run Corepack or generate `package-lock.json`.
 
 ### Run the development panel
 
 Install or link `bundle/` into the Adobe CEP extensions directory under the folder name `bodygroovn`, then run:
 
 ```sh
-mise exec -- yarn start
+mise exec -- node scripts/ci/run-yarn.mjs start
 ```
 
 The development manifest opens `http://127.0.0.1:3000/`. After changing ExtendScript, the manifest, or the Node server, close and reopen the panel or reload it from CEP developer tools; the Vite server cannot reload the After Effects host process for you.
@@ -77,11 +77,11 @@ The development manifest opens `http://127.0.0.1:3000/`. After changing ExtendSc
 ### Build and verify
 
 ```sh
-mise exec -- yarn lint
-mise exec -- yarn typecheck
-mise exec -- yarn test
-mise exec -- yarn build
-mise exec -- yarn verify
+mise exec -- node scripts/ci/run-yarn.mjs lint
+mise exec -- node scripts/ci/run-yarn.mjs typecheck
+mise exec -- node scripts/ci/run-yarn.mjs test
+mise exec -- node scripts/ci/run-yarn.mjs build
+mise exec -- node scripts/ci/run-yarn.mjs verify
 ```
 
 `yarn build` creates the production extension payload at `build/bodygroovn`. It generates the preview player import, bundles the panel and Node 17 server/worker, writes the production manifest, and creates exactly four player payload files: `lottie.js`, `lottie.js.gz`, `standalone.js`, and `demo.html`.
@@ -89,10 +89,10 @@ mise exec -- yarn verify
 Useful focused checks:
 
 ```sh
-mise exec -- yarn version:check
-mise exec -- yarn check:provenance
-mise exec -- yarn test:server
-mise exec -- yarn check:payload
+mise exec -- node scripts/ci/run-yarn.mjs version:check
+mise exec -- node scripts/ci/run-yarn.mjs check:provenance
+mise exec -- node scripts/ci/run-yarn.mjs test:server
+mise exec -- node scripts/ci/run-yarn.mjs check:payload
 ```
 
 Local builds are unsigned. Production ZXP packaging and timestamped signing occur only in the protected GitHub release workflow. Do not distribute the raw payload directory as a release archive.
@@ -117,7 +117,7 @@ Generated-file and compatibility invariants are documented in [AGENTS.md](AGENTS
 
 ## Version contract
 
-`package.json.version` is the product-version source of truth. `mise exec -- yarn version:sync` records it in the product version helper and the two CEP bundle/extension version attributes; `mise exec -- yarn version:check` fails on drift without editing files.
+`package.json.version` is the product-version source of truth. `mise exec -- node scripts/ci/run-yarn.mjs version:sync` records it in the product version helper and the two CEP bundle/extension version attributes; `mise exec -- node scripts/ci/run-yarn.mjs version:check` fails on drift without editing files.
 
 The product UI and `bm:version` show the product version. Lottie animation JSON `v`, animation report `version`, and `compatibilityVersion` intentionally remain `5.12.0`. Each animation JSON adds `meta.g: "bodygroovn <product version>"` without changing its Lottie compatibility version.
 

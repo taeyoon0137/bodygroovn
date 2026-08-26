@@ -36,22 +36,22 @@ Use these commands:
 ```sh
 mise install --locked
 mise exec -- node scripts/ci/check-toolchain.mjs
-mise exec -- yarn install --immutable
-mise exec -- yarn start
-mise exec -- yarn build
-mise exec -- yarn lint
-mise exec -- yarn typecheck
-mise exec -- yarn test
-mise exec -- yarn verify
-mise exec -- yarn version:sync
-mise exec -- yarn version:check
+mise exec -- node scripts/ci/run-yarn.mjs install --immutable
+mise exec -- node scripts/ci/run-yarn.mjs start
+mise exec -- node scripts/ci/run-yarn.mjs build
+mise exec -- node scripts/ci/run-yarn.mjs lint
+mise exec -- node scripts/ci/run-yarn.mjs typecheck
+mise exec -- node scripts/ci/run-yarn.mjs test
+mise exec -- node scripts/ci/run-yarn.mjs verify
+mise exec -- node scripts/ci/run-yarn.mjs version:sync
+mise exec -- node scripts/ci/run-yarn.mjs version:check
 ```
 
-- `mise exec -- yarn start` serves the development panel on `127.0.0.1:3000`; install or link the development extension as the folder `bodygroovn` and reload the CEP panel manually after host-side changes.
-- `mise exec -- yarn build` creates the production extension payload and deterministic player artifacts.
-- `mise exec -- yarn verify` is the local aggregate gate. Run targeted tests first, then the aggregate gate before claiming completion.
+- `mise exec -- node scripts/ci/run-yarn.mjs start` serves the development panel on `127.0.0.1:3000`; install or link the development extension as the folder `bodygroovn` and reload the CEP panel manually after host-side changes.
+- `mise exec -- node scripts/ci/run-yarn.mjs build` creates the production extension payload and deterministic player artifacts.
+- `mise exec -- node scripts/ci/run-yarn.mjs verify` is the local aggregate gate. Run targeted tests first, then the aggregate gate before claiming completion.
 - Every install in automation must use `--immutable`.
-- Verify the Yarn CLI SHA-256 through `scripts/ci/check-toolchain.mjs` before the first Yarn command in automation.
+- Run Yarn through `scripts/ci/run-yarn.mjs`; it verifies the CLI SHA-256 before execution and avoids platform-specific command resolution.
 
 TypeScript 6 is limited to configuration, ambient declarations, and tests for v6.0.0. Do not convert production JavaScript or JSX to TypeScript in this release. See [ROADMAP.md](ROADMAP.md).
 
@@ -71,7 +71,7 @@ TypeScript 6 is limited to configuration, ambient declarations, and tests for v6
 
 `package.json.version` is the only product-version source. A pending major Changeset advances the seeded `5.12.0` package version to product version `6.0.0` during the release transaction.
 
-`mise exec -- yarn version:sync` may update exactly these three values:
+`mise exec -- node scripts/ci/run-yarn.mjs version:sync` may update exactly these three values:
 
 - `productVersion` in `bundle/jsx/helpers/versionHelper.jsx`;
 - manifest `ExtensionBundleVersion`;

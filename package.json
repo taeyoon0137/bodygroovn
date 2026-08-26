@@ -26,7 +26,7 @@
     "check:provenance": "node scripts/check-provenance.mjs",
     "check:removed": "node scripts/check-removed-features.mjs",
     "check:toolchain": "node scripts/ci/check-toolchain.mjs",
-    "verify": "yarn check:toolchain && yarn version:check && yarn check:provenance && yarn check:generated && yarn check:removed && yarn lint && yarn typecheck && yarn test && yarn test:server && yarn build"
+    "verify": "node scripts/ci/check-toolchain.mjs && node scripts/ci/run-yarn.mjs version:check && node scripts/ci/run-yarn.mjs check:provenance && node scripts/ci/run-yarn.mjs check:generated && node scripts/ci/run-yarn.mjs check:removed && node scripts/ci/run-yarn.mjs lint && node scripts/ci/run-yarn.mjs typecheck && node scripts/ci/run-yarn.mjs test && node scripts/ci/run-yarn.mjs test:server && node scripts/ci/run-yarn.mjs build"
   },
   "dependencies": {
     "aphrodite": "2.4.0",

@@ -8,7 +8,9 @@ const [playerSource, previewSource] = await Promise.all([
 const expected = `${guard}${playerSource}`
 
 if (previewSource !== expected) {
-  throw new Error('src/lottie.js is stale; run yarn build to regenerate it from player/lottie.js')
+  throw new Error(
+    'src/lottie.js is stale; run mise exec -- node scripts/ci/run-yarn.mjs build to regenerate it from player/lottie.js',
+  )
 }
 
 try {
