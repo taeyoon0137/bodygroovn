@@ -315,9 +315,11 @@ test('processes a static PNG through the worker and keeps PNG output', async (t)
   assert.equal((await fs.promises.readFile(pathname)).subarray(1, 4).toString('ascii'), 'PNG');
 });
 
-test('maps corrupt CRC and decoded image overflow to their route errors', async (t) => {
+test('maps corrupt PNG data, CRC, and decoded image overflow to their route errors', async (t) => {
   const f = await fixture();
   t.after(async () => { await f.controller.close(); await fs.promises.rm(f.root, { recursive: true, force: true }); });
+  const corruptDataPath = path.join(f.root, 'corrupt-data.png');
+  await fs.promises.writeFile(corruptDataPath, syntheticPng(1, 1));
   const corruptPath = path.join(f.root, 'corrupt.png');
   const corrupt = syntheticPng(1, 1);
   corrupt[corrupt.length - 1] ^= 1;
@@ -326,6 +328,7 @@ test('maps corrupt CRC and decoded image overflow to their route errors', async 
   await fs.promises.writeFile(oversizedPath, syntheticPng(100000, 100000));
 
   for (const [pathname, status, code] of [
+    [corruptDataPath, 422, 'INVALID_PNG_DATA'],
     [corruptPath, 422, 'INVALID_PNG_CRC'],
     [oversizedPath, 413, 'IMAGE_TOO_LARGE'],
   ]) {

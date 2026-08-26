@@ -180,6 +180,18 @@ describe('retained exporter contracts', () => {
 })
 
 describe('CEP bridge failure accounting', () => {
+  it.each([
+    [{encoded: true, encoded_data: 'data:image/png;base64,AA=='}, '"data:image/png;base64,AA=="'],
+    [{encoded: false}, 'null'],
+  ])('preserves the two-argument imageProcessed bridge contract', async (result, encodedData) => {
+    compositionsProvider.imageProcessed(result, {assetType: 'image'})
+    await Promise.resolve()
+
+    expect(bridge.evalScripts).toEqual([
+      `$.__bodymovin.bm_sourceHelper.imageProcessed(false,${encodedData})`,
+    ])
+  })
+
   it('delegates a nonempty malformed expression ID to the outstanding-request tracker', async () => {
     await bridge.listeners.get('bm:expression:process')({
       data: {id: 'expression-1', render_generation: 8},

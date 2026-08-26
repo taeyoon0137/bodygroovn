@@ -77,6 +77,18 @@ test('validates PNG chunks, CRC, IEND, limits, and preserved variants', () => {
   assert.throws(() => inspectPng(Buffer.from('not png'), limits), /INVALID_PNG/);
 });
 
+test('classifies CRC-valid corrupt image data as invalid PNG data', async (t) => {
+  const root = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bodygroovn-png-data-'));
+  t.after(() => fs.promises.rm(root, { recursive: true, force: true }));
+  const pathname = path.join(root, 'invalid-data.png');
+  await fs.promises.writeFile(pathname, png());
+
+  await assert.rejects(
+    processPng({ pathname, paletteColors: 32, limits }),
+    /INVALID_PNG_DATA/,
+  );
+});
+
 test('preserves unsupported PNG variants byte-for-byte and returns one specific warning', async (t) => {
   const root = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'bodygroovn-png-preserve-'));
   t.after(() => fs.promises.rm(root, { recursive: true, force: true }));
